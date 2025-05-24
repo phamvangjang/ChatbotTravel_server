@@ -7,10 +7,36 @@
     <title>Travel Assistant - Hồ Chí Minh City</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <!-- Thêm vào phần head -->
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
     <style>
-        .map-container {
+        /* .map-container {
             height: 500px;
             margin: 20px 0;
+        } */
+        .map-container {
+            height: 500px;
+            width: 100%;
+            border-radius: 4px;
+        }
+
+        .mapboxgl-popup {
+            max-width: 300px;
+        }
+
+        .mapboxgl-popup-content {
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .mapboxgl-popup-content h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        .mapboxgl-popup-content p {
+            margin-bottom: 5px;
         }
 
         .activity-card {
@@ -287,6 +313,61 @@
             });
         });
 
+        // Hàm hiển thị bản đồ
+        function displayMap(mapData) {
+            if (!mapData || !mapData.markers) {
+                console.error('Dữ liệu bản đồ không hợp lệ');
+                return;
+            }
+
+            // Xóa nội dung cũ
+            const mapContainer = document.getElementById('map');
+            mapContainer.innerHTML = '';
+
+            // Khởi tạo map
+            mapboxgl.accessToken = 'pk.eyJ1IjoidmFuZ2lhbmc0Nzg5IiwiYSI6ImNtYTY0YTc3bzBxdDUyaXE1c3hxcmM3Y3YifQ.APhUinusY7r_S5mEQarhIg'; // Thay bằng token của bạn
+            const map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/streets-v11',
+                center: mapData.center || [106.660172, 10.762622],
+                zoom: 12
+            });
+
+            // Thêm controls
+            map.addControl(new mapboxgl.NavigationControl());
+            map.addControl(new mapboxgl.FullscreenControl());
+
+            // Thêm markers khi map đã load
+            map.on('load', () => {
+                mapData.markers.forEach(marker => {
+                    // Tạo popup
+                    const popup = new mapboxgl.Popup({ offset: 25 })
+                        .setHTML(`
+                            <h3>${marker.name}</h3>
+                            <p>${marker.description || ''}</p>
+                        `);
+
+                    // Thêm marker
+                    new mapboxgl.Marker()
+                        .setLngLat([marker.coordinates.longitude, marker.coordinates.latitude])
+                        .setPopup(popup)
+                        .addTo(map);
+                });
+
+                // Fit bounds để hiển thị tất cả markers
+                if (mapData.markers.length > 0) {
+                    const bounds = new mapboxgl.LngLatBounds();
+                    mapData.markers.forEach(marker => {
+                        bounds.extend([marker.coordinates.longitude, marker.coordinates.latitude]);
+                    });
+                    map.fitBounds(bounds, {
+                        padding: 50,
+                        maxZoom: 15
+                    });
+                }
+            });
+        }
+
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const query = document.getElementById('query').value;
@@ -304,13 +385,13 @@
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                        'Accept-Language': selectedLanguage // Add language header
+                        'Accept-Language': selectedLanguage
                     },
                     body: JSON.stringify({
                         query: query,
                         user_id: 'user123',
                         language: selectedLanguage,
-                        preferred_language: selectedLanguage, // Add preferred language
+                        preferred_language: selectedLanguage,
                         user_location: {
                             latitude: 10.762622,
                             longitude: 106.660172
@@ -322,70 +403,60 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    throw new TypeError("Response was not JSON");
-                }
-
                 const data = await response.json();
 
                 if (data.error) {
                     throw new Error(data.error);
                 }
 
-                // Show language info only if different from selected language
-                if (data.detected_language && data.detected_language.code !== selectedLanguage) {
-                    const languageInfo = document.getElementById('languageInfo');
-                    const detectedLanguage = document.getElementById('detectedLanguage');
-                    detectedLanguage.textContent = `Ngôn ngữ được phát hiện: ${data.detected_language.name} (Chuyển sang ${selectedLanguageName})`;
-                    languageInfo.style.display = 'block';
-                } else {
-                    document.getElementById('languageInfo').style.display = 'none';
+                // Kiểm tra dữ liệu trước khi sử dụng
+                if (!data || !data.itinerary) {
+                    throw new Error('Dữ liệu không hợp lệ');
                 }
 
-                // Show results section with animation
-                const results = document.getElementById('results');
-                results.style.display = 'block';
-                results.classList.add('fade-in');
+                // Hiển thị bản đồ
+                if (data.map_data) {
+                    displayMap(data.map_data);
+                }
 
-                // Display map
-                const mapImg = document.createElement('img');
-                mapImg.src = data.map_url;
-                mapImg.className = 'img-fluid';
-                document.getElementById('map').innerHTML = '';
-                document.getElementById('map').appendChild(mapImg);
-
-                // Display itinerary
+                // Hiển thị lịch trình
                 const itineraryHtml = data.itinerary.map(day => `
-                    <div class="card activity-card">
-                        <div class="card-header">
-                            <h6 class="mb-0">${selectedLanguage === 'en' ? 'Day' : 'Ngày'} ${day.day}</h6>
+            <div class="card activity-card">
+                <div class="card-header">
+                    <h6 class="mb-0">${selectedLanguage === 'en' ? 'Day' : 'Ngày'} ${day.day}</h6>
+                </div>
+                <div class="card-body">
+                    ${day.activities.map(activity => `
+                        <div class="activity mb-3">
+                            <h6>${activity.time} - ${activity.name}</h6>
+                            <p>${activity.description}</p>
+                            <div class="location-info">
+                                <strong>${selectedLanguage === 'en' ? 'Location' : 'Địa điểm'}:</strong> ${activity.location.name}<br>
+                                <strong>${selectedLanguage === 'en' ? 'Address' : 'Địa chỉ'}:</strong> ${activity.location.address}<br>
+                                <strong>${selectedLanguage === 'en' ? 'Estimated cost' : 'Chi phí ước tính'}:</strong> ${activity.estimated_cost}
+                            </div>
                         </div>
-                        <div class="card-body">
-                            ${day.activities.map(activity => `
-                                <div class="activity mb-3">
-                                    <h6>${activity.time} - ${activity.name}</h6>
-                                    <p>${activity.description}</p>
-                                    <div class="location-info">
-                                        <strong>${selectedLanguage === 'en' ? 'Location' : 'Địa điểm'}:</strong> ${activity.location.name}<br>
-                                        <strong>${selectedLanguage === 'en' ? 'Address' : 'Địa chỉ'}:</strong> ${activity.location.address}<br>
-                                        <strong>${selectedLanguage === 'en' ? 'Estimated cost' : 'Chi phí ước tính'}:</strong> ${activity.estimated_cost}
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `).join('');
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
                 document.getElementById('itinerary').innerHTML = itineraryHtml;
 
-                // Display tips
-                const tipsHtml = data.tips.map(tip => `
-                    <li class="list-group-item">${tip}</li>
-                `).join('');
-                document.getElementById('tips').innerHTML = tipsHtml;
+                // Hiển thị tips
+                if (data.tips && Array.isArray(data.tips)) {
+                    const tipsHtml = data.tips.map(tip => `
+                <li class="list-group-item">${tip}</li>
+            `).join('');
+                    document.getElementById('tips').innerHTML = tipsHtml;
+                }
 
-                // Display transportation
-                document.getElementById('transportation').textContent = data.transportation;
+                // Hiển thị thông tin phương tiện
+                if (data.transportation) {
+                    document.getElementById('transportation').textContent = data.transportation;
+                }
+
+                // Hiển thị kết quả
+                document.getElementById('results').style.display = 'block';
 
             } catch (error) {
                 console.error('Error:', error);

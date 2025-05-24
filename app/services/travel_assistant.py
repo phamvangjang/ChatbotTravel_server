@@ -70,33 +70,48 @@ class TravelAssistant:
             # Get recommendations from OpenAI
             recommendations = self.openai.analyze_travel_query(query, context)
             
-            # Add location coordinates
+            # Định nghĩa center và markers trước
+            center = [106.660172, 10.762622]  # Tọa độ mặc định của HCMC
+            markers = []
+            
+            # Add location coordinates và tạo markers
             for day in recommendations['itinerary']:
                 for activity in day['activities']:
                     if 'location' in activity:
-                        coords = self.mapbox.search_places(activity['location']['name'])
+                        coords = self.mapbox.search_places(activity['location']['address'])
                         if coords:
                             activity['location']['coordinates'] = {
                                 'latitude': coords[0],
                                 'longitude': coords[1]
                             }
+                            # Thêm vào markers
+                            markers.append({
+                                'name': activity['location']['name'],
+                                'coordinates': [coords[1], coords[0]]  # [longitude, latitude]
+                            })
             
-            # Generate map URL
-            markers = []
-            for day in recommendations['itinerary']:
-                for activity in day['activities']:
-                    if 'location' in activity and 'coordinates' in activity['location']:
-                        coords = activity['location']['coordinates']
-                        markers.append({
-                            'name': activity['location']['name'],
-                            'coordinates': [coords['longitude'], coords['latitude']]
-                        })
+            # Tạo dữ liệu cho bản đồ
+            map_data = {
+                'center': center,
+                'markers': []
+            }
             
-            # Use HCMC coordinates as fallback center
-            center = [106.660172, 10.762622]  # HCMC coordinates
+            # Thêm markers vào map_data
+            for marker in markers:
+                map_data['markers'].append({
+                    'name': marker['name'],
+                    'coordinates': {
+                        'latitude': marker['coordinates'][1],
+                        'longitude': marker['coordinates'][0]
+                    }
+                })
+            
+            # Cập nhật center nếu có markers
             if markers:
                 center = markers[0]['coordinates']
-                
+                map_data['center'] = center
+            
+            # Tạo URL bản đồ tĩnh
             recommendations['map_url'] = self.mapbox.get_static_map_url(center, markers)
             
             # Add VnExpress tips and transportation info
@@ -114,6 +129,9 @@ class TravelAssistant:
                 'code': lang,
                 'name': self.language_detector.get_language_name(lang)
             }
+            
+            # Thêm map_data vào recommendations
+            recommendations['map_data'] = map_data
             
             return recommendations
             

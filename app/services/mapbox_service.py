@@ -96,9 +96,13 @@ class MapboxService:
         """Search for places using Mapbox Geocoding API"""
         try:
             logger.info(f"Searching for place: {query}")
+            print(f"Searching for place: {query}")
+
+            # Thêm từ khóa "Ho Chi Minh City" để tăng độ chính xác
+            _query = f"{query}, Ho Chi Minh City"
             
             # Construct URL
-            url = f"{self.base_url}/geocoding/v5/mapbox.places/{query}.json"
+            url = f"{self.base_url}/geocoding/v5/mapbox.places/{_query}.json"
             params = {
                 'access_token': self.access_token,
                 'country': 'vn',
