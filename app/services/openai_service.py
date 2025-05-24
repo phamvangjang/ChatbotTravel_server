@@ -61,6 +61,7 @@ Please provide a detailed response in the following JSON format:
     "total_cost": "Total estimated cost in VND"
 }}
 
+IMPORTANT: Your response must be a valid JSON object. Do not include any text before or after the JSON object.
 Ensure the itinerary is realistic, considering:
 1. Opening hours of attractions
 2. Travel time between locations
@@ -73,7 +74,7 @@ Ensure the itinerary is realistic, considering:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a helpful travel assistant specializing in Ho Chi Minh City tourism."},
+                    {"role": "system", "content": "You are a helpful travel assistant specializing in Ho Chi Minh City tourism. You must respond with valid JSON only."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
@@ -81,21 +82,42 @@ Ensure the itinerary is realistic, considering:
             )
             
             # Extract and parse response
-            content = response.choices[0].message.content
+            content = response.choices[0].message.content.strip()
             logger.debug(f"Received response from OpenAI: {content[:200]}...")
             
             try:
+                # Clean the response to ensure it's valid JSON
+                content = content.strip()
+                if content.startswith('```json'):
+                    content = content[7:]
+                if content.endswith('```'):
+                    content = content[:-3]
+                content = content.strip()
+                
                 result = json.loads(content)
                 logger.info("Successfully parsed OpenAI response")
                 return result
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse OpenAI response as JSON: {str(e)}")
                 logger.error(f"Raw response: {content}")
-                return {'error': 'Failed to parse response from AI'}
+                # Return a basic error response
+                return {
+                    'error': 'Failed to parse response from AI',
+                    'itinerary': [],
+                    'tips': ['Please try again with a different query'],
+                    'transportation': 'Unable to provide transportation advice',
+                    'total_cost': 'N/A'
+                }
                 
         except Exception as e:
             logger.error(f"Error in analyze_travel_query: {str(e)}", exc_info=True)
-            return {'error': str(e)}
+            return {
+                'error': str(e),
+                'itinerary': [],
+                'tips': ['An error occurred while processing your request'],
+                'transportation': 'Unable to provide transportation advice',
+                'total_cost': 'N/A'
+            }
             
     def translate_text(self, text: str, target_lang: str) -> str:
         """Translate text to target language"""

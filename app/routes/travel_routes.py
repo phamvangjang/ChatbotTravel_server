@@ -88,7 +88,20 @@ class TravelQuery(Resource):
             query = data.get('query')
             user_id = data.get('user_id')
             user_location = data.get('user_location')
-            lang = data.get('lang', 'vi')
+            # Lấy language từ request, ưu tiên theo thứ tự:
+            # 1. language từ body
+            # 2. Accept-Language header
+            # 3. Mặc định là 'vi'
+            lang = data.get('language') or request.headers.get('Accept-Language')
+            # lang = data.get('language') or request.headers.get('Accept-Language') or 'vi'
+            
+            print("=== Language Debug ===")
+            print(f"Language from body: {data.get('language')}")
+            print(f"Language from header: {request.headers.get('Accept-Language')}")
+            print(f"Final selected language: {lang}")
+            print(f"query: {query}")
+            print(f"user_id: {user_id}")
+            print(f"user_location: {user_location}")
             
             logger.info(f"Processing query: {query}")
             logger.debug(f"User ID: {user_id}, Language: {lang}")
@@ -100,6 +113,8 @@ class TravelQuery(Resource):
                 logger.error("Travel assistant not initialized")
                 return {'error': 'Service not available'}, 500
             
+            # result = 'Xin chào'
+
             # Process query
             result = travel_assistant.process_travel_query(
                 query=query,

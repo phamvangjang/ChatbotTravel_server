@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Travel Assistant - Hồ Chí Minh City</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
     <style>
         .map-container {
             height: 500px;
@@ -67,10 +68,85 @@
             top: 50%;
             transform: translateY(-50%);
         }
+
+        .language-selector {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+
+        .language-selector .dropdown-menu {
+            min-width: 200px;
+        }
+
+        .language-option {
+            display: flex;
+            align-items: center;
+            padding: 8px 15px;
+        }
+
+        .language-option img {
+            width: 20px;
+            height: 15px;
+            margin-right: 10px;
+        }
+
+        .language-option:hover {
+            background-color: #f8f9fa;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Language Selector -->
+    <div class="language-selector">
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="languageDropdown"
+                data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-translate"></i> Ngôn ngữ
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="languageDropdown">
+                <li>
+                    <a class="dropdown-item language-option" href="#" data-lang="vi">
+                        <img src="https://flagcdn.com/w20/vn.png" alt="Vietnamese">
+                        Tiếng Việt
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item language-option" href="#" data-lang="en">
+                        <img src="https://flagcdn.com/w20/us.png" alt="English">
+                        English
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item language-option" href="#" data-lang="zh-CN">
+                        <img src="https://flagcdn.com/w20/cn.png" alt="Simplified Chinese">
+                        简体中文
+                    </a>
+                </li>
+                <!-- <li>
+                    <a class="dropdown-item language-option" href="#" data-lang="zh-TW">
+                        <img src="https://flagcdn.com/w20/tw.png" alt="Traditional Chinese">
+                        繁體中文
+                    </a>
+                </li> -->
+                <li>
+                    <a class="dropdown-item language-option" href="#" data-lang="ja">
+                        <img src="https://flagcdn.com/w20/jp.png" alt="Japanese">
+                        日本語
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item language-option" href="#" data-lang="ko">
+                        <img src="https://flagcdn.com/w20/kr.png" alt="Korean">
+                        한국어
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="text-center">
@@ -191,6 +267,26 @@
             btnText.textContent = 'Tìm kiếm';
         }
 
+        // Add language selection handling
+        let selectedLanguage = 'vi'; // Default language
+        let selectedLanguageName = 'Tiếng Việt'; // Default language name
+
+        document.querySelectorAll('.language-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                e.preventDefault();
+                const optionElement = e.target.closest('.language-option');
+                selectedLanguage = optionElement.dataset.lang;
+                selectedLanguageName = optionElement.textContent.trim();
+
+                // Update dropdown button text
+                const button = document.getElementById('languageDropdown');
+                button.innerHTML = `<i class="bi bi-translate"></i> ${selectedLanguageName}`;
+
+                // Update page language
+                document.documentElement.lang = selectedLanguage;
+            });
+        });
+
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const query = document.getElementById('query').value;
@@ -207,11 +303,14 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Accept': 'application/json'
+                        'Accept': 'application/json',
+                        'Accept-Language': selectedLanguage // Add language header
                     },
                     body: JSON.stringify({
                         query: query,
                         user_id: 'user123',
+                        language: selectedLanguage,
+                        preferred_language: selectedLanguage, // Add preferred language
                         user_location: {
                             latitude: 10.762622,
                             longitude: 106.660172
@@ -234,12 +333,14 @@
                     throw new Error(data.error);
                 }
 
-                // Show language info
-                if (data.detected_language) {
+                // Show language info only if different from selected language
+                if (data.detected_language && data.detected_language.code !== selectedLanguage) {
                     const languageInfo = document.getElementById('languageInfo');
                     const detectedLanguage = document.getElementById('detectedLanguage');
-                    detectedLanguage.textContent = `Ngôn ngữ được phát hiện: ${data.detected_language.name}`;
+                    detectedLanguage.textContent = `Ngôn ngữ được phát hiện: ${data.detected_language.name} (Chuyển sang ${selectedLanguageName})`;
                     languageInfo.style.display = 'block';
+                } else {
+                    document.getElementById('languageInfo').style.display = 'none';
                 }
 
                 // Show results section with animation
@@ -258,7 +359,7 @@
                 const itineraryHtml = data.itinerary.map(day => `
                     <div class="card activity-card">
                         <div class="card-header">
-                            <h6 class="mb-0">Ngày ${day.day}</h6>
+                            <h6 class="mb-0">${selectedLanguage === 'en' ? 'Day' : 'Ngày'} ${day.day}</h6>
                         </div>
                         <div class="card-body">
                             ${day.activities.map(activity => `
@@ -266,9 +367,9 @@
                                     <h6>${activity.time} - ${activity.name}</h6>
                                     <p>${activity.description}</p>
                                     <div class="location-info">
-                                        <strong>Địa điểm:</strong> ${activity.location.name}<br>
-                                        <strong>Địa chỉ:</strong> ${activity.location.address}<br>
-                                        <strong>Chi phí ước tính:</strong> ${activity.estimated_cost}
+                                        <strong>${selectedLanguage === 'en' ? 'Location' : 'Địa điểm'}:</strong> ${activity.location.name}<br>
+                                        <strong>${selectedLanguage === 'en' ? 'Address' : 'Địa chỉ'}:</strong> ${activity.location.address}<br>
+                                        <strong>${selectedLanguage === 'en' ? 'Estimated cost' : 'Chi phí ước tính'}:</strong> ${activity.estimated_cost}
                                     </div>
                                 </div>
                             `).join('')}

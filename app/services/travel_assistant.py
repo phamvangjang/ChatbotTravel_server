@@ -52,6 +52,7 @@ class TravelAssistant:
             if not lang:
                 lang = self.language_detector.detect_language(query)
                 logger.info(f"Detected language: {self.language_detector.get_language_name(lang)}")
+                print(f"Detected language: {self.language_detector.get_language_name(lang)}")
             
             # Validate language
             if not self.language_detector.is_supported_language(lang):

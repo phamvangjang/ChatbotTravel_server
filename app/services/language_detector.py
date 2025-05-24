@@ -2,13 +2,48 @@ import logging
 from typing import Dict, Optional
 import openai
 import re
+import json
+import os
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
+# Configure logging
+def setup_logger():
+    # Create logs directory if it doesn't exist
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+        
+    # Create a logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    
+    # Create handlers
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # File handler
+    log_file = f'logs/language_detector_{datetime.now().strftime("%Y%m%d")}.log'
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Create formatters and add it to handlers
+    log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(log_format)
+    file_handler.setFormatter(log_format)
+    
+    # Add handlers to the logger
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    
+    return logger
+
+# Initialize logger
+logger = setup_logger()
 
 class LanguageDetector:
     SUPPORTED_LANGUAGES = {
         'vi': 'Vietnamese',
-        'zh': 'Chinese',
+        'zh-CN': 'Chinese (Simplified)',
         'ko': 'Korean',
         'en': 'English',
         'ja': 'Japanese'
@@ -18,9 +53,9 @@ class LanguageDetector:
     LANGUAGE_PATTERNS = {
         'vi': [
             r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]',
-            r'\b(tôi|bạn|của|và|là|có|không|được|cho|với|này|đó|đây|kia|nào|sao|bao|giờ|đâu|ai|gì|nhiều|ít|lớn|nhỏ|cao|thấp|dài|ngắn|rộng|hẹp|đẹp|xấu|tốt|kém|hay|dở|đúng|sai|đúng|sai|đúng|sai)\b'
+            r'\b(tôi|bạn|của|và|là|có|không|được|cho|với|này|đó|đây|kia|nào|sao|bao|giờ|đâu|ai|gì|nhiều|ít|lớn|nhỏ|cao|thấp|dài|ngắn|rộng|hẹp|đẹp|xấu|tốt|kém|hay|dở|đúng|sai)\b'
         ],
-        'zh': [
+        'zh-CN': [
             r'[\u4e00-\u9fff]',
             r'\b(我|你|他|她|它|们|的|是|在|有|和|这|那|什么|为什么|怎么|多少|谁|哪里|什么时候|好|坏|大|小|高|低|长|短|宽|窄|美|丑|对|错)\b'
         ],
@@ -46,43 +81,62 @@ class LanguageDetector:
         Returns the detected language code.
         """
         try:
-            logger.info("Detecting language for input text...")
+            if not text or not isinstance(text, str):
+                logger.warning("Empty or invalid input text, defaulting to English")
+                return 'en'
+                
+            logger.info(f"Detecting language for input text: {text[:100]}...")
             
             # First try pattern matching
             pattern_detection = self._detect_by_patterns(text)
             if pattern_detection:
                 logger.info(f"Language detected by patterns: {self.SUPPORTED_LANGUAGES[pattern_detection]}")
+                print("pattern_detection: " + pattern_detection)
                 return pattern_detection
             
             # If pattern matching fails, use OpenAI
             logger.info("Pattern matching failed, using OpenAI for detection...")
             
             prompt = f"""Analyze the following text and determine its language. 
-            Respond with ONLY ONE of these language codes: vi (Vietnamese), zh (Chinese), ko (Korean), en (English), or ja (Japanese).
+            Respond with ONLY ONE of these language codes: vi (Vietnamese), zh-CN (Chinese Simplified), ko (Korean), en (English), or ja (Japanese).
             If the language is not one of these, respond with 'en'.
             
             Text: {text}
             
             Language code:"""
             
-            response = self.openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a language detection expert. Respond with ONLY the language code."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=10
-            )
-            
-            detected_lang = response.choices[0].message.content.strip().lower()
-            
-            # Validate the detected language
-            if detected_lang in self.SUPPORTED_LANGUAGES:
-                logger.info(f"OpenAI detected language: {self.SUPPORTED_LANGUAGES[detected_lang]}")
-                return detected_lang
-            else:
-                logger.warning(f"Unsupported language detected: {detected_lang}, defaulting to English")
+            try:
+                response = self.openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a language detection expert. Respond with ONLY the language code."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=10
+                )
+                
+                if not response or not hasattr(response, 'choices') or not response.choices:
+                    logger.error("Empty response from OpenAI")
+                    return 'en'
+                    
+                detected_lang = response.choices[0].message.content.strip().lower()
+                logger.info(f"Raw OpenAI response: {detected_lang}")
+                
+                # Normalize Chinese language code
+                if detected_lang.startswith('zh'):
+                    detected_lang = 'zh-CN'
+                
+                # Validate the detected language
+                if detected_lang in self.SUPPORTED_LANGUAGES:
+                    logger.info(f"OpenAI detected language: {self.SUPPORTED_LANGUAGES[detected_lang]}")
+                    return detected_lang
+                else:
+                    logger.warning(f"Unsupported language detected: {detected_lang}, defaulting to English")
+                    return 'en'
+                    
+            except Exception as openai_error:
+                logger.error(f"OpenAI API error: {str(openai_error)}")
                 return 'en'
                 
         except Exception as e:
@@ -100,15 +154,17 @@ class LanguageDetector:
                     matches = re.findall(pattern, text, re.IGNORECASE)
                     score += len(matches)
                 scores[lang] = score
+                logger.debug(f"Pattern matching score for {lang}: {score}")
             
             # Get the language with the highest score
             if scores:
                 max_score = max(scores.values())
                 if max_score > 0:
                     detected_lang = max(scores.items(), key=lambda x: x[1])[0]
-                    logger.info(f"Pattern matching score: {scores}")
+                    logger.info(f"Pattern matching scores: {json.dumps(scores, indent=2)}")
                     return detected_lang
             
+            logger.info("No language patterns matched")
             return None
             
         except Exception as e:

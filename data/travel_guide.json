@@ -1,44 +1,39 @@
 {
   "attractions": [
     {
-      "name": "Chợ Bến Thành",
-      "description": "Chợ Bến Thành là một trong những biểu tượng của Sài Gòn, nơi bạn có thể mua sắm và thưởng thức ẩm thực địa phương."
+      "name": "Bến Thành Market",
+      "description": "Famous central market in District 1"
     },
     {
-      "name": "Nhà thờ Đức Bà",
-      "description": "Nhà thờ Đức Bà là một công trình kiến trúc Pháp cổ kính, biểu tượng của Sài Gòn."
-    },
-    {
-      "name": "Bảo tàng Chứng tích Chiến tranh",
-      "description": "Bảo tàng lưu giữ những hiện vật và tài liệu về chiến tranh Việt Nam."
+      "name": "Notre Dame Cathedral",
+      "description": "Historic French colonial cathedral"
     }
   ],
   "cuisine": [
     {
       "name": "Phở",
-      "description": "Món ăn truyền thống của Việt Nam với nước dùng thơm ngon."
+      "description": "Traditional Vietnamese noodle soup"
     },
     {
       "name": "Bánh mì",
-      "description": "Bánh mì Việt Nam với nhân thịt và rau tươi."
+      "description": "Vietnamese baguette sandwich"
     }
   ],
-  "transportation": {
-    "Xe buýt": "Hệ thống xe buýt công cộng phủ khắp thành phố.",
-    "Taxi": "Taxi và Grab có sẵn 24/7.",
-    "Xe máy": "Phương tiện phổ biến nhất để di chuyển trong thành phố."
-  },
-  "accommodation": {
-    "Quận 1": "Khu vực trung tâm với nhiều khách sạn cao cấp.",
-    "Quận 3": "Khu vực yên tĩnh với nhiều homestay."
-  },
-  "weather": {
-    "Mùa khô": "Từ tháng 12 đến tháng 4, thời tiết nắng nóng.",
-    "Mùa mưa": "Từ tháng 5 đến tháng 11, mưa nhiều vào buổi chiều."
-  },
+  "transportation": "Taxis and Grab are widely available. Public buses and motorbike taxis are also common.",
+  "accommodation": [
+    {
+      "type": "Hotels",
+      "description": "Wide range of hotels from budget to luxury in District 1"
+    },
+    {
+      "type": "Hostels",
+      "description": "Budget-friendly options in Pham Ngu Lao area"
+    }
+  ],
+  "weather": "Tropical climate with two seasons: dry (December to April) and rainy (May to November)",
   "tips": [
-    "Nên mang theo ô hoặc áo mưa trong mùa mưa.",
-    "Cẩn thận với móc túi ở các khu vực đông người.",
-    "Nên đổi tiền tại ngân hàng hoặc tiệm vàng."
+    "Carry an umbrella during rainy season",
+    "Bargain when shopping at markets",
+    "Be careful with street food hygiene"
   ]
 }
