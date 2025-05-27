@@ -12,3 +12,4 @@ __pycache__/
 *.pyzq
 *.pyzr
 *.pyzs
+*.log

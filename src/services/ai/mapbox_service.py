@@ -2,6 +2,7 @@ import os
 import requests
 from typing import List, Dict, Tuple, Optional
 import logging
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -92,48 +93,37 @@ class MapboxService:
             logger.error(f"Error generating static map: {str(e)}", exc_info=True)
             return ""
         
-    def search_places(self, query: str) -> Optional[Tuple[float, float]]:
-        """Search for places using Mapbox Geocoding API"""
+    def search_places(self, location):
+        """Search for a place using Mapbox Geocoding API"""
         try:
-            logger.info(f"Searching for place: {query}")
-            print(f"Searching for place: {query}")
-
-            # Thêm từ khóa "Ho Chi Minh City" để tăng độ chính xác
-            _query = f"{query}, Ho Chi Minh City"
+            # Clean and format the location string
+            location = location.strip()
+            if not location:
+                return None
+                
+            # Encode the location for URL
+            encoded_location = quote(location)
             
-            # Construct URL
-            url = f"{self.base_url}/geocoding/v5/mapbox.places/{_query}.json"
+            # Make request to Mapbox Geocoding API
+            url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{encoded_location}.json"
             params = {
                 'access_token': self.access_token,
-                'country': 'vn',
-                'types': 'poi,place,address',
-                'limit': 1,
-                'language': 'vi',
-                'proximity': '106.660172,10.762622'  # Center of HCMC
+                'country': 'vn',  # Limit to Vietnam
+                'types': 'place,address,poi',  # Limit to places, addresses and points of interest
+                'limit': 1  # Get only the best match
             }
             
-            # Send request
-            logger.debug(f"Sending request to: {url}")
             response = requests.get(url, params=params)
             response.raise_for_status()
             
-            # Parse response
             data = response.json()
-            logger.debug(f"Received response: {data}")
-            
-            if not data['features']:
-                logger.warning(f"No results found for: {query}")
-                return None
-                
-            # Extract coordinates (longitude, latitude)
-            coordinates = data['features'][0]['center']
-            logger.info(f"Found coordinates: {coordinates}")
-            
-            # Return as tuple (latitude, longitude)
-            return (coordinates[1], coordinates[0])
+            if data['features']:
+                # Return coordinates [latitude, longitude]
+                return data['features'][0]['center']
+            return None
             
         except Exception as e:
-            logger.error(f"Error searching places: {str(e)}", exc_info=True)
+            logger.error(f"Error searching for place: {str(e)}")
             return None
         
     def optimize_route(
@@ -197,6 +187,37 @@ class MapboxService:
             
         except Exception as e:
             logger.error(f"Error generating static map URL: {str(e)}")
+            return ""
+
+    def generate_map_link(self, locations: List[Dict]) -> str:
+        """Generate a map link for the given locations"""
+        try:
+            logger.info("Generating map link...")
+            
+            # Base URL for Mapbox Static Images API
+            base_url = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static"
+            
+            # Add markers to the URL
+            marker_strings = []
+            for location in locations:
+                # Search for location coordinates
+                coords = self.search_places(location)
+                if coords:
+                    marker_strings.append(f"pin-s+ff0000({coords[1]},{coords[0]})")
+            
+            if not marker_strings:
+                logger.warning("No valid coordinates found for locations")
+                return ""
+            
+            # Construct the final URL
+            markers_str = ",".join(marker_strings)
+            url = f"{base_url}/{markers_str}/106.660172,10.762622,13/600x400?access_token={self.access_token}"
+            
+            logger.info("Map link generated successfully")
+            return url
+            
+        except Exception as e:
+            logger.error(f"Error generating map link: {str(e)}")
             return ""
 
 # Initialize Mapbox service
