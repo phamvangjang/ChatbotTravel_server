@@ -32,9 +32,11 @@ def create_app():
     # Add namespaces
     from src.controllers.auth_controller import auth_ns
     from src.controllers.travel.travel_controller import api as travel_ns
+    from src.controllers.chatting_controller import chatting_ns
     
     api.add_namespace(auth_ns, path='/api/auth')
     api.add_namespace(travel_ns, path='/api/travel')
+    api.add_namespace(chatting_ns, path='/api/chatting')
     
     # Create database tables
     with app.app_context():
