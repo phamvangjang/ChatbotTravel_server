@@ -57,7 +57,6 @@ chat_request_model = api.model('ChatRequest', {
 chat_response_model = api.model('ChatResponse', {
     'conversation_id': fields.Integer(description='Conversation ID'),
     'message': fields.Nested(message_model),
-    'itinerary': fields.Nested(itinerary_model)
 })
 
 error_model = api.model('Error', {

@@ -1,5 +1,10 @@
 from flask_restx import Resource, fields, Namespace, reqparse
+from werkzeug.datastructures import FileStorage
+from flask import request
 from src.services.chatting_service import create_conversation, get_user_conversations, get_conversation_messages, save_message, end_conversation
+from src.services.ai.speech_service import SpeechService
+from werkzeug.utils import secure_filename
+import os
 from src import db
 
 chatting_ns = Namespace('chatting', description='Chatting operations')
@@ -36,10 +41,38 @@ message_create_model = chatting_ns.model('MessageCreate', {
     'voice_url': fields.String(description='URL of the voice message if any')
 })
 
+voice_message_parser = reqparse.RequestParser()
+voice_message_parser.add_argument('conversation_id', type=int, required=True, help='ID of the conversation')
+voice_message_parser.add_argument('sender', type=str, required=True, help='Sender of the message (must be user)')
+voice_message_parser.add_argument('audio', type=FileStorage, location='files', required=True, help='Audio file (WAV, AIFF, FLAC)')
+
+user_message_model = chatting_ns.model('UserMessage', {
+    'message_id': fields.Integer(description='ID of the message'),
+    'conversation_id': fields.Integer(description='ID of the conversation'),
+    'sender': fields.String(description='Sender of the message'),
+    'message_text': fields.String(description='Content of the message'),
+    'translated_text': fields.String(description='Translated text of the message'),
+    'message_type': fields.String(description='Type of the message'),
+    'voice_url': fields.String(description='URL of the voice message'),
+    'sent_at': fields.DateTime(description='Time when the message was sent')
+})
+
+bot_message_model = chatting_ns.model('BotMessage', {
+    'message_id': fields.Integer(description='ID of the message'),
+    'conversation_id': fields.Integer(description='ID of the conversation'),
+    'sender': fields.String(description='Sender of the message'),
+    'message_text': fields.String(description='Content of the message'),
+    'message_type': fields.String(description='Type of the message'),
+    'sent_at': fields.DateTime(description='Time when the message was sent')
+})
+
 message_save_response = chatting_ns.model('MessageSaveResponse', {
     'status': fields.String(description='Status of the response'),
     'message': fields.String(description='Response message'),
-    'data': fields.Nested(message_response_model)
+    'data': fields.Nested(chatting_ns.model('MessageData', {
+        'user_message': fields.Nested(user_message_model),
+        'bot_message': fields.Nested(bot_message_model),
+    }))
 })
 
 success_response = chatting_ns.model('SuccessResponse', {
@@ -66,6 +99,11 @@ parser.add_argument('user_id', type=int, required=True, help='ID of the user')
 
 conversation_parser = reqparse.RequestParser()
 conversation_parser.add_argument('conversation_id', type=int, required=True, help='ID of the conversation')
+
+# Configure upload folder
+UPLOAD_FOLDER = 'uploads/voice_messages'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
 @chatting_ns.route('/conversations')
 class ConversationResource(Resource):
@@ -177,6 +215,99 @@ class MessageResource(Resource):
             'message': 'Message saved successfully',
             'data': result
         }, 201
+
+@chatting_ns.route('/messages/voice')
+class VoiceMessageResource(Resource):
+    @chatting_ns.expect(voice_message_parser)
+    @chatting_ns.response(201, 'Voice message processed successfully', message_save_response)
+    @chatting_ns.response(400, 'Invalid request data')
+    @chatting_ns.response(404, 'Conversation not found')
+    @chatting_ns.response(500, 'Internal server error')
+    def post(self):
+        """Process a voice message
+        
+        Upload a voice message and get AI response.
+        Supported audio formats: WAV, AIFF, FLAC
+        
+        Example request:
+        ```
+        curl -X POST "http://localhost:5000/api/chatting/messages/voice" \
+             -H "accept: application/json" \
+             -H "Content-Type: multipart/form-data" \
+             -F "conversation_id=55" \
+             -F "sender=user" \
+             -F "audio=@/path/to/audio.wav"
+        ```
+        """
+        try:
+            # Get data from form data
+            args = voice_message_parser.parse_args()
+            conversation_id = args.get('conversation_id')
+            sender = args.get('sender')
+            audio_file = args.get('audio')
+            
+            # Validate required fields
+            if not conversation_id or not sender or not audio_file:
+                return {'message': 'Missing required fields'}, 400
+            
+            # Validate sender
+            if sender != 'user':
+                return {'message': 'Only user can send voice messages'}, 400
+            
+            # Save audio file
+            filename = secure_filename(audio_file.filename)
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            
+            # Ensure the upload directory exists
+            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+            
+            # Save the file
+            audio_file.save(file_path)
+            
+            try:
+                # Convert speech to text
+                speech_service = SpeechService()
+                success, result = speech_service.convert_speech_to_text(file_path)
+                
+                if not success:
+                    return {'message': result['error']}, 500
+                
+                # Save message with transcribed text
+                success, message_result = save_message(
+                    conversation_id=int(conversation_id),
+                    sender=sender,
+                    message_text=result['text'],
+                    message_type='voice',
+                    voice_url=file_path
+                )
+                
+                if not success:
+                    if message_result == "Conversation not found":
+                        return {'message': message_result}, 404
+                    return {'message': f'Failed to save message: {message_result}'}, 500
+                
+                return {
+                    'status': 'success',
+                    'message': 'Voice message processed successfully',
+                    'data': message_result
+                }, 201
+                
+            finally:
+                # Clean up audio file
+                try:
+                    if os.path.exists(file_path):
+                        # Close any open file handles
+                        audio_file.close()
+                        # Wait a bit to ensure file is released
+                        import time
+                        time.sleep(0.1)
+                        # Try to remove the file
+                        os.remove(file_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete temporary file {file_path}: {str(e)}")
+                    
+        except Exception as e:
+            return {'message': f'Error processing voice message: {str(e)}'}, 500
 
 @chatting_ns.route('/conversations/end')
 class EndConversationResource(Resource):

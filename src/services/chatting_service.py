@@ -1,7 +1,9 @@
 from datetime import datetime
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.services.ai.openai_service import OpenAIService
 from src import db
+from datetime import datetime, timezone
 
 def create_conversation(user_id: int, source_language: str = 'en', started_at: datetime = None):
     """
@@ -96,7 +98,7 @@ def get_conversation_messages(conversation_id: int):
 def save_message(conversation_id: int, sender: str, message_text: str, translated_text: str = None, 
                 message_type: str = 'text', voice_url: str = None):
     """
-    Save a new message to the database
+    Save a new message to the database and get AI response if message is from user
     
     Args:
         conversation_id (int): ID of the conversation
@@ -123,13 +125,73 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
             translated_text=translated_text,
             message_type=message_type,
             voice_url=voice_url,
-            sent_at=datetime.utcnow()
+            sent_at=datetime.now(timezone.utc)
         )
         
         db.session.add(new_message)
         db.session.commit()
         db.session.refresh(new_message)
         
+        # If message is from user, get AI response
+        if sender == "user":
+            try:
+                # Initialize OpenAI service
+                openai_service = OpenAIService()
+                
+                # Get AI response
+                ai_response = openai_service.generate_response(message_text)
+                
+                # Save AI response as a new message
+                bot_message = Message(
+                    conversation_id=conversation_id,
+                    sender="bot",
+                    message_text=ai_response['text'],
+                    message_type='text',
+                    sent_at=datetime.now(timezone.utc)
+                )
+                
+                db.session.add(bot_message)
+                db.session.commit()
+                db.session.refresh(bot_message)
+                
+                # Return both messages
+                return True, {
+                    "user_message": {
+                        "message_id": new_message.message_id,
+                        "conversation_id": new_message.conversation_id,
+                        "sender": new_message.sender,
+                        "message_text": new_message.message_text,
+                        "translated_text": new_message.translated_text,
+                        "message_type": new_message.message_type,
+                        "voice_url": new_message.voice_url,
+                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+                    },
+                    "bot_message": {
+                        "message_id": bot_message.message_id,
+                        "conversation_id": bot_message.conversation_id,
+                        "sender": bot_message.sender,
+                        "message_text": bot_message.message_text,
+                        "message_type": bot_message.message_type,
+                        "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None
+                    },
+                }
+            except Exception as e:
+                # If AI response fails, still return the user message
+                return True, {
+                    "user_message": {
+                        "message_id": new_message.message_id,
+                        "conversation_id": new_message.conversation_id,
+                        "sender": new_message.sender,
+                        "message_text": new_message.message_text,
+                        "translated_text": new_message.translated_text,
+                        "message_type": new_message.message_type,
+                        "voice_url": new_message.voice_url,
+                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+                    },
+                    "error": f"Failed to get AI response: {str(e)}"
+                }
+        
+        # If message is from bot, just return the message
         return True, {
             "message_id": new_message.message_id,
             "conversation_id": new_message.conversation_id,
