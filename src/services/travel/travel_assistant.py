@@ -3,7 +3,7 @@ from src.models import Conversation, Message, ItinerarySuggestion, ItineraryActi
 from src.models.base import db
 
 class TravelAssistant:
-    def process_message(self, message, conversation_id, mapbox_service, language_detector, openai_service, crawler):
+    def process_message(self, message, conversation_id, mapbox_service, language_detector, openai_service):
         # Get or create conversation
         if conversation_id:
             conversation = Conversation.query.get(conversation_id)
@@ -49,7 +49,8 @@ class TravelAssistant:
                     total_days=itinerary_data['total_days'],
                     estimated_cost=itinerary_data['estimated_cost'],
                     mapbox_link=mapbox_service.generate_map_link(itinerary_data['locations'])
-                )
+                )                
+                # print(itinerary)
                 db.session.add(itinerary)
                 db.session.flush()  # Get itinerary_id
                 

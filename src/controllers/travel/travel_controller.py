@@ -8,6 +8,8 @@ from src.services.ai.speech_service import SpeechService
 from src.models import Conversation, Message, ItinerarySuggestion, ItineraryActivity
 from src.models.base import db
 from datetime import datetime
+from flask import render_template
+import os
 
 # Create namespace
 api = Namespace('travel', description='Travel recommendation operations')
@@ -91,8 +93,7 @@ class Chat(Resource):
             conversation_id=conversation_id,
             mapbox_service=mapbox_service,
             language_detector=language_detector,
-            openai_service=openai_service,
-            crawler=crawler
+            openai_service=openai_service
         )
         
         return response
@@ -177,4 +178,52 @@ class ConversationHistory(Resource):
                     'end_time': str(act.end_time)
                 } for act in itin.activities]
             } for itin in itineraries]
-        } 
+        }
+
+@api.route('/interactive-map')
+class InteractiveMapView(Resource):
+    def get(self):
+        try:
+            # Get the latest itinerary from the database
+            latest_itinerary = ItinerarySuggestion.query.order_by(ItinerarySuggestion.created_at.desc()).first()
+            
+            if not latest_itinerary:
+                return {'error': 'No itinerary found. Please create a new itinerary first.'}, 404
+                
+            # Get locations from activities
+            locations = []
+            for activity in latest_itinerary.activities:
+                try:
+                    if activity.coordinates:
+                        coords = activity.coordinates
+                        locations.append({
+                            'name': activity.location_name,
+                            'description': activity.description,
+                            'day': activity.day_number,
+                            'longitude': float(coords.get('longitude')),
+                            'latitude': float(coords.get('latitude')),
+                            'full_address': activity.full_address,
+                            'start_time': str(activity.start_time),
+                            'end_time': str(activity.end_time)
+                        })
+                        print(f"Added location: {activity.location_name} with coordinates: {coords.get('longitude')}, {coords.get('latitude')}")
+                except (ValueError, AttributeError) as e:
+                    print(f"Error processing activity {activity.activity_id}: {str(e)}")
+                    continue
+            
+            if not locations:
+                print("No valid locations found. Activities in database:")
+                for activity in latest_itinerary.activities:
+                    print(f"Activity: {activity.location_name}, Coordinates: {activity.coordinates}")
+                return {'error': 'No valid locations found in the itinerary. Please try creating a new itinerary.'}, 404
+            
+            # Render interactive map template
+            return render_template('itinerary_map.html',
+                mapbox_token=os.getenv('MAPBOX_ACCESS_TOKEN'),
+                activities=locations,
+                itinerary=latest_itinerary
+            )
+            
+        except Exception as e:
+            print(f"Error in interactive map view: {str(e)}")
+            return {'error': str(e)}, 500 

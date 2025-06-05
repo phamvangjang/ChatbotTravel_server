@@ -1,11 +1,17 @@
 import openai
 import os
 import json
+import logging
 from datetime import datetime, time
+from typing import Optional, Dict
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 class OpenAIService:
     def __init__(self):
         openai.api_key = os.getenv('OPENAI_API_KEY')
+        logger.info("OpenAI service initialized")
     
     def generate_response(self, message):
         try:
@@ -27,6 +33,7 @@ class OpenAIService:
                                 "title": activity title,
                                 "description": activity description,
                                 "location": location name,
+                                "full_address": full address of the location,
                                 "start_time": "HH:MM",
                                 "end_time": "HH:MM"
                             }
@@ -42,6 +49,7 @@ class OpenAIService:
             
             # Parse response and extract itinerary if present
             response_text = response.choices[0].message.content
+            logger.info("Received response from OpenAI")
             itinerary = self._extract_itinerary(response_text)
             
             return {
@@ -49,6 +57,7 @@ class OpenAIService:
                 'itinerary': itinerary
             }
         except Exception as e:
+            logger.error(f"Error generating response: {str(e)}")
             return {
                 'text': f"I apologize, but I encountered an error: {str(e)}",
                 'itinerary': None
