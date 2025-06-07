@@ -13,3 +13,5 @@ __pycache__/
 *.pyzr
 *.pyzs
 *.log
+_pycache_/
+uploads/

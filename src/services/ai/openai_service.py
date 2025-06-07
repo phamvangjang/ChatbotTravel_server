@@ -1,8 +1,6 @@
 import openai
 import os
-import json
 import logging
-from datetime import datetime, time
 from typing import Optional, Dict
 
 # Initialize logger
@@ -13,125 +11,84 @@ class OpenAIService:
         openai.api_key = os.getenv('OPENAI_API_KEY')
         logger.info("OpenAI service initialized")
     
-    def generate_response(self, message):
+    def generate_title(self, message: str) -> str:
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": """You are a travel assistant specializing in Vietnamese destinations. 
-                    When providing travel recommendations, structure your response in a way that includes:
-                    1. A detailed text response
-                    2. An itinerary object with the following structure:
-                    {
-                        "destination": "city name",
-                        "total_days": number of days,
-                        "estimated_cost": estimated cost in VND,
-                        "locations": [list of location names],
-                        "activities": [
-                            {
-                                "day": day number,
-                                "title": activity title,
-                                "description": activity description,
-                                "location": location name,
-                                "full_address": full address of the location,
-                                "start_time": "HH:MM",
-                                "end_time": "HH:MM"
-                            }
-                        ]
-                    }
-                    Make sure to include specific locations that can be mapped.
-                    Format the itinerary as a JSON object after the text response."""},
+                    {"role": "system", "content": """You are a helpful assistant that creates concise, descriptive titles for travel-related conversations.
+                    Create a short title (maximum 100 characters) that captures the main topic of the user's travel query.
+                    The title should be in Vietnamese and focus on the key aspects of their travel request.
+                    Examples:
+                    - "Tư vấn du lịch Đà Nẵng 3 ngày 2 đêm"
+                    - "Địa điểm vui chơi phù hợp gia đình tại Hà Nội"
+                    - "Lịch trình khám phá Sài Gòn cuối tuần"
+                    Return only the title text, no additional explanation."""},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.7,
+                max_tokens=100
+            )
+            
+            title = response.choices[0].message.content.strip()
+            logger.info(f"Generated title: {title}")
+            return title
+            
+        except Exception as e:
+            logger.error(f"Error generating title: {str(e)}")
+            return "Tư vấn du lịch"
+    
+    def generate_response(self, message):
+        try:
+            # Generate title for the conversation
+            title = self.generate_title(message)
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": """You are a friendly and helpful Vietnamese travel assistant. Your role is to:
+                    1. Maintain conversation context and remember information provided by users
+                    2. Provide specific, actionable travel recommendations based on the information you have
+                    3. Only ask for missing critical information that is absolutely necessary for making recommendations
+                    4. When you have enough information, provide a detailed itinerary including:
+                       - Day-by-day schedule
+                       - Specific attractions and activities
+                       - Estimated costs
+                       - Transportation options
+                       - Recommended accommodations
+                       - Local tips and insights
+                    5. If you need more information, ask only ONE specific question at a time
+                    6. Always acknowledge the information the user has already provided
+                    7. Keep responses focused and practical
+                    
+                    Example of good response:
+                    "Dựa trên thông tin bạn đã cung cấp (3 người, ngân sách 10 triệu, thích di tích lịch sử), tôi đề xuất lịch trình 3 ngày tại TP.HCM như sau:
+                    
+                    Ngày 1: Khu vực trung tâm
+                    - Sáng: Tham quan Dinh Độc Lập
+                    - Trưa: Ăn trưa tại nhà hàng địa phương
+                    - Chiều: Bảo tàng Chứng tích Chiến tranh
+                    - Tối: Khám phá ẩm thực đường phố Bùi Viện
+                    
+                    [Tiếp tục với ngày 2 và 3...]"
+                    
+                    Maintain a conversational but efficient tone, focusing on providing value rather than asking unnecessary questions."""},
                     {"role": "user", "content": message}
                 ],
                 temperature=0.7,
                 max_tokens=2000
             )
             
-            # Parse response and extract itinerary if present
             response_text = response.choices[0].message.content
             logger.info("Received response from OpenAI")
-            itinerary = self._extract_itinerary(response_text)
             
             return {
                 'text': response_text,
-                'itinerary': itinerary
+                'title': title
             }
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
             return {
-                'text': f"I apologize, but I encountered an error: {str(e)}",
-                'itinerary': None
-            }
-    
-    def _extract_itinerary(self, text):
-        try:
-            # Try to find JSON object in the text
-            json_start = text.find('{')
-            json_end = text.rfind('}') + 1
-            
-            if json_start != -1 and json_end != -1:
-                json_str = text[json_start:json_end]
-                try:
-                    itinerary_data = json.loads(json_str)
-                    return itinerary_data
-                except json.JSONDecodeError:
-                    print("Failed to parse JSON from response")
-            
-            # Fallback to text parsing if JSON extraction fails
-            locations = []
-            activities = []
-            current_day = None
-            current_activity = None
-            
-            # Split text into lines for processing
-            lines = text.split('\n')
-            
-            for line in lines:
-                line = line.strip()
-                
-                # Check for day markers
-                if "Ngày" in line or "Day" in line:
-                    if current_activity:
-                        activities.append(current_activity)
-                    current_day = int(line.split()[1].replace(':', ''))
-                    current_activity = None
-                    continue
-                
-                # Check for location mentions
-                if ":" in line and not line.startswith("Ngày") and not line.startswith("Day"):
-                    location = line.split(':')[0].strip()
-                    if location and location not in locations:
-                        locations.append(location)
-                    
-                    # Create activity entry
-                    if current_activity:
-                        activities.append(current_activity)
-                    
-                    current_activity = {
-                        'day': current_day,
-                        'title': location,
-                        'description': line.split(':')[1].strip() if ':' in line else line,
-                        'location': location,
-                        'start_time': "09:00",  # Default start time
-                        'end_time': "17:00"     # Default end time
-                    }
-            
-            # Add the last activity if exists
-            if current_activity:
-                activities.append(current_activity)
-            
-            # Create itinerary structure
-            if locations:
-                return {
-                    'destination': 'Ho Chi Minh City',
-                    'total_days': max([act['day'] for act in activities]) if activities else 1,
-                    'estimated_cost': 5000000,  # Default cost in VND
-                    'locations': locations,
-                    'activities': activities
-                }
-            
-            return None
-            
-        except Exception as e:
-            print(f"Error extracting itinerary: {str(e)}")
-            return None 
+                'text': f"Xin lỗi, tôi đã gặp lỗi: {str(e)}",
+                'title': "Tư vấn du lịch"
+            } 

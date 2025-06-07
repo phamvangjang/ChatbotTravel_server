@@ -13,7 +13,8 @@ chatting_ns = Namespace('chatting', description='Chatting operations')
 conversation_create_model = chatting_ns.model('ConversationCreate', {
     'user_id': fields.Integer(required=True, description='ID of the user starting the conversation'),
     'source_language': fields.String(description='Source language for the conversation', default='en'),
-    'started_at': fields.DateTime(description='Start time of the conversation (default: current UTC time)')
+    'started_at': fields.DateTime(description='Start time of the conversation (default: current UTC time)'),
+    'title': fields.String(description='Title of the conversation')
 })
 
 conversation_response_model = chatting_ns.model('ConversationResponse', {
@@ -21,7 +22,8 @@ conversation_response_model = chatting_ns.model('ConversationResponse', {
     'user_id': fields.Integer(description='ID of the user'),
     'source_language': fields.String(description='Source language of the conversation'),
     'started_at': fields.DateTime(description='Start time of the conversation'),
-    'ended_at': fields.DateTime(description='End time of the conversation (null if ongoing)')
+    'ended_at': fields.DateTime(description='End time of the conversation (null if ongoing)'),
+    'title': fields.String(description='Title of the conversation')
 })
 
 message_response_model = chatting_ns.model('MessageResponse', {
@@ -121,7 +123,8 @@ class ConversationResource(Resource):
         success, result = create_conversation(
             user_id=data['user_id'],
             source_language=data.get('source_language', 'en'),
-            started_at=data.get('started_at')
+            started_at=data.get('started_at'),
+            title=data.get('title')
         )
         
         if not success:

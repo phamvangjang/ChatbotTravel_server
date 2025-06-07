@@ -5,7 +5,7 @@ from src.services.ai.openai_service import OpenAIService
 from src import db
 from datetime import datetime, timezone
 
-def create_conversation(user_id: int, source_language: str = 'en', started_at: datetime = None):
+def create_conversation(user_id: int, source_language: str = 'en', started_at: datetime = None, title: str = None):
     """
     Create a new conversation for a user
     
@@ -13,7 +13,7 @@ def create_conversation(user_id: int, source_language: str = 'en', started_at: d
         user_id (int): ID of the user
         source_language (str): Source language for the conversation
         started_at (datetime): Start time of the conversation
-        
+        title (str): Title of the conversation
     Returns:
         tuple: (success: bool, result: dict or str)
     """
@@ -22,6 +22,7 @@ def create_conversation(user_id: int, source_language: str = 'en', started_at: d
             started_at = datetime.utcnow()
             
         new_conversation = Conversation(
+            title=title,
             user_id=user_id,
             source_language=source_language,
             started_at=started_at,
@@ -37,7 +38,8 @@ def create_conversation(user_id: int, source_language: str = 'en', started_at: d
             "user_id": new_conversation.user_id,
             "source_language": new_conversation.source_language,
             "started_at": new_conversation.started_at.isoformat() if new_conversation.started_at else None,
-            "ended_at": new_conversation.ended_at.isoformat() if new_conversation.ended_at else None
+            "ended_at": new_conversation.ended_at.isoformat() if new_conversation.ended_at else None,
+            "title": new_conversation.title
         }
     except Exception as e:
         db.session.rollback()
@@ -61,7 +63,8 @@ def get_user_conversations(user_id: int):
             "user_id": conv.user_id,
             "source_language": conv.source_language,
             "started_at": conv.started_at.isoformat() if conv.started_at else None,
-            "ended_at": conv.ended_at.isoformat() if conv.ended_at else None
+            "ended_at": conv.ended_at.isoformat() if conv.ended_at else None,
+            "title": conv.title
         } for conv in conversations]
     except Exception as e:
         return False, str(e)
@@ -88,9 +91,9 @@ def get_conversation_messages(conversation_id: int):
         return True, [{
             "message_id": msg.message_id,
             "conversation_id": msg.conversation_id,
-            "content": msg.message_text,
-            "role": msg.sender,
-            "created_at": msg.sent_at.isoformat() if msg.sent_at else None
+            "message_text": msg.message_text,
+            "sender": msg.sender,
+            "sent_at": msg.sent_at.isoformat() if msg.sent_at else None
         } for msg in messages]
     except Exception as e:
         return False, str(e)
@@ -117,6 +120,8 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
         if not conversation:
             return False, "Conversation not found"
             
+        print(f"Current conversation title: {conversation.title}")
+            
         # Create new message
         new_message = Message(
             conversation_id=conversation_id,
@@ -129,8 +134,6 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
         )
         
         db.session.add(new_message)
-        db.session.commit()
-        db.session.refresh(new_message)
         
         # If message is from user, get AI response
         if sender == "user":
@@ -140,6 +143,17 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                 
                 # Get AI response
                 ai_response = openai_service.generate_response(message_text)
+                print(f"AI generated title: {ai_response['title']}")
+                
+                # Check if conversation needs a title
+                if conversation.title is None or conversation.title.strip() == "":
+                    conversation.title = ai_response['title']
+                    print(f"Setting new conversation title: {conversation.title}")
+                    # Commit title update separately
+                    db.session.commit()
+                    db.session.refresh(conversation)
+                else:
+                    print(f"Conversation already has title: {conversation.title}")
                 
                 # Save AI response as a new message
                 bot_message = Message(
@@ -152,6 +166,7 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                 
                 db.session.add(bot_message)
                 db.session.commit()
+                db.session.refresh(new_message)
                 db.session.refresh(bot_message)
                 
                 # Return both messages
@@ -177,6 +192,8 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                 }
             except Exception as e:
                 # If AI response fails, still return the user message
+                db.session.commit()
+                db.session.refresh(new_message)
                 return True, {
                     "user_message": {
                         "message_id": new_message.message_id,
@@ -192,6 +209,8 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                 }
         
         # If message is from bot, just return the message
+        db.session.commit()
+        db.session.refresh(new_message)
         return True, {
             "message_id": new_message.message_id,
             "conversation_id": new_message.conversation_id,
@@ -235,7 +254,8 @@ def end_conversation(conversation_id: int):
             "user_id": conversation.user_id,
             "source_language": conversation.source_language,
             "started_at": conversation.started_at.isoformat() if conversation.started_at else None,
-            "ended_at": conversation.ended_at.isoformat() if conversation.ended_at else None
+            "ended_at": conversation.ended_at.isoformat() if conversation.ended_at else None,
+            "title": conversation.title
         }
     except Exception as e:
         db.session.rollback()
