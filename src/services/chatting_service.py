@@ -120,7 +120,7 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
         if not conversation:
             return False, "Conversation not found"
             
-        print(f"Current conversation title: {conversation.title}")
+        # print(f"Current conversation title: {conversation.title}")
             
         # Create new message
         new_message = Message(
@@ -143,17 +143,17 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                 
                 # Get AI response
                 ai_response = openai_service.generate_response(message_text)
-                print(f"AI generated title: {ai_response['title']}")
+                # print(f"AI generated title: {ai_response['title']}")
                 
                 # Check if conversation needs a title
                 if conversation.title is None or conversation.title.strip() == "":
                     conversation.title = ai_response['title']
-                    print(f"Setting new conversation title: {conversation.title}")
+                    # print(f"Setting new conversation title: {conversation.title}")
                     # Commit title update separately
                     db.session.commit()
                     db.session.refresh(conversation)
-                else:
-                    print(f"Conversation already has title: {conversation.title}")
+                # else:
+                #     # print(f"Conversation already has title: {conversation.title}")
                 
                 # Save AI response as a new message
                 bot_message = Message(
