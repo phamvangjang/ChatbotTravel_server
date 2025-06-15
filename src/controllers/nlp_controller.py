@@ -7,6 +7,8 @@ from chromadb.utils import embedding_functions
 import numpy as np
 import json
 import math
+import openai
+from datetime import datetime
 
 # Khởi tạo namespace
 nlp_ns = Namespace('nlp', description='NLP operations for travel recommendations')
@@ -494,4 +496,175 @@ class SyncDiadiem(Resource):
                 'status': 'error',
                 'message': str(e),
                 'processed_count': 0
+            }, 500
+
+# Khởi tạo OpenAI client
+openai.api_key = os.getenv('OPENAI_API_KEY')
+
+def format_search_results(search_results):
+    """Format kết quả tìm kiếm thành văn bản có cấu trúc"""
+    formatted_text = []
+    
+    # Lọc kết quả có độ tương đồng cao
+    high_similarity_results = [r for r in search_results if r['similarity'] > 0.7]
+    
+    if high_similarity_results:
+        formatted_text.append("Dựa trên tìm kiếm của bạn, tôi tìm thấy những địa điểm phù hợp sau:")
+        
+        for result in high_similarity_results:
+            formatted_text.append(f"\n- {result['ten_dia_diem']}")
+            formatted_text.append(f"  {result['mo_ta']}")
+    
+    # Thêm các kết quả có độ tương đồng trung bình
+    medium_similarity_results = [r for r in search_results if 0.5 <= r['similarity'] <= 0.7]
+    if medium_similarity_results:
+        formatted_text.append("\nNgoài ra, bạn có thể tham khảo thêm:")
+        for result in medium_similarity_results:
+            formatted_text.append(f"\n- {result['ten_dia_diem']}")
+            formatted_text.append(f"  {result['mo_ta']}")
+    
+    return "\n".join(formatted_text)
+
+def generate_natural_response(base_response, question):
+    """Sử dụng GPT để làm cho câu trả lời tự nhiên hơn"""
+    prompt = f"""Bạn là một trợ lý du lịch thông minh. Hãy viết lại câu trả lời sau một cách tự nhiên và thân thiện hơn, 
+    nhưng vẫn giữ nguyên thông tin chính. Thêm một câu hỏi ở cuối để tiếp tục cuộc trò chuyện.
+
+Câu hỏi của người dùng: {question}
+
+Câu trả lời hiện tại:
+{base_response}
+
+Yêu cầu:
+1. Giữ nguyên tất cả thông tin về địa điểm
+2. Làm cho câu trả lời tự nhiên và thân thiện hơn
+3. Thêm một câu hỏi ở cuối để tiếp tục cuộc trò chuyện
+4. Giữ độ dài tương đương với câu trả lời gốc
+
+Hãy trả lời bằng tiếng Việt."""
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Bạn là một trợ lý du lịch thông minh và thân thiện."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        # Nếu có lỗi với GPT, trả về câu trả lời gốc
+        return base_response
+
+@nlp_ns.route('/chat')
+class ChatResponse(Resource):
+    @nlp_ns.expect(question_model)
+    @nlp_ns.marshal_with(nlp_ns.model('ChatResponse', {
+        'status': fields.String,
+        'message': fields.String,
+        'response': fields.String,
+        'suggested_activities': fields.List(fields.String)
+    }))
+    def post(self):
+        """Generate natural response based on search results"""
+        try:
+            # Lấy câu hỏi từ request
+            data = request.get_json()
+            question = data.get('question')
+            
+            if not question:
+                return {
+                    'status': 'error',
+                    'message': 'Question is required',
+                    'response': '',
+                    'suggested_activities': []
+                }, 400
+            
+            # Thực hiện tìm kiếm trước
+            search_response = self.search_locations(question)
+            if search_response[1] != 200:  # Nếu có lỗi trong tìm kiếm
+                return {
+                    'status': 'error',
+                    'message': search_response[0]['message'],
+                    'response': '',
+                    'suggested_activities': []
+                }, search_response[1]
+            
+            search_results = search_response[0]['results']
+            
+            # Tạo câu trả lời cơ bản từ kết quả tìm kiếm
+            base_response = format_search_results(search_results)
+            
+            # Làm cho câu trả lời tự nhiên hơn bằng GPT
+            natural_response = generate_natural_response(base_response, question)
+            
+            # Tạo danh sách hoạt động gợi ý
+            suggested_activities = [
+                result['ten_dia_diem']
+                for result in search_results
+                if result['similarity'] > 0.7
+            ]
+            
+            return {
+                'status': 'success',
+                'message': 'Generated response successfully',
+                'response': natural_response,
+                'suggested_activities': suggested_activities
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'Error generating response: {str(e)}',
+                'response': '',
+                'suggested_activities': []
+            }, 500
+    
+    def search_locations(self, question):
+        """Helper method to perform search"""
+        try:
+            collection = get_or_create_collection()
+            question = question.strip().lower()
+            question_words = set(question.split())
+            
+            results = collection.query(
+                query_texts=[question],
+                n_results=5,
+                include=['documents', 'metadatas', 'distances']
+            )
+            
+            formatted_results = []
+            for doc, metadata, distance in zip(results['documents'][0], results['metadatas'][0], results['distances'][0]):
+                similarity_score = calculate_semantic_score(distance, question_words, metadata)
+                if similarity_score > MIN_SIMILARITY_THRESHOLD:
+                    formatted_results.append({
+                        'id': metadata['id'],
+                        'ten_dia_diem': metadata['ten_dia_diem'],
+                        'mo_ta': metadata['mo_ta'],
+                        'similarity': round(similarity_score, 2)
+                    })
+            
+            formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
+            formatted_results = formatted_results[:5]
+            
+            if not formatted_results:
+                return {
+                    'status': 'error',
+                    'message': 'No relevant locations found',
+                    'results': []
+                }, 404
+            
+            return {
+                'status': 'success',
+                'message': f'Found {len(formatted_results)} relevant locations',
+                'results': formatted_results
+            }, 200
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'Error during search: {str(e)}',
+                'results': []
             }, 500 
