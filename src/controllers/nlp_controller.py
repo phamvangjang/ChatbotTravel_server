@@ -1,0 +1,390 @@
+from flask_restx import Namespace, Resource, fields, reqparse
+from flask import request
+from src.nlp_model.process_diadiem import process_diadiem
+import os
+import chromadb
+from chromadb.utils import embedding_functions
+import numpy as np
+import json
+import math
+
+# Khởi tạo namespace
+nlp_ns = Namespace('nlp', description='NLP operations for travel recommendations')
+
+# Định nghĩa parser cho pagination
+pagination_parser = reqparse.RequestParser()
+pagination_parser.add_argument('page', type=int, default=1, help='Page number (starts from 1)')
+pagination_parser.add_argument('limit', type=int, default=10, help='Number of items per page')
+pagination_parser.add_argument('sort_by', type=str, default='id', help='Field to sort by')
+pagination_parser.add_argument('sort_order', type=str, default='asc', help='Sort order (asc/desc)')
+
+# Định nghĩa model cho request/response
+question_model = nlp_ns.model('Question', {
+    'question': fields.String(required=True, description='User question about travel in Ho Chi Minh City')
+})
+
+answer_model = nlp_ns.model('Answer', {
+    'id': fields.String(description='Location ID'),
+    'ten_dia_diem': fields.String(description='Location name'),
+    'mo_ta': fields.String(description='Location description'),
+    'similarity': fields.Float(description='Similarity score (0-1)')
+})
+
+search_response_model = nlp_ns.model('SearchResponse', {
+    'status': fields.String(description='Status of the search operation'),
+    'message': fields.String(description='Detailed message about the search operation'),
+    'results': fields.List(fields.Nested(answer_model), description='Search results')
+})
+
+sync_response_model = nlp_ns.model('SyncResponse', {
+    'status': fields.String(description='Status of the sync operation'),
+    'message': fields.String(description='Detailed message about the sync operation'),
+    'processed_count': fields.Integer(description='Number of locations processed')
+})
+
+# Model cho response của embeddings
+embedding_model = nlp_ns.model('Embedding', {
+    'id': fields.String(description='Location ID'),
+    'embedding': fields.List(fields.Float, description='Vector embedding'),
+    'document': fields.String(description='Original document text')
+})
+
+embeddings_response_model = nlp_ns.model('EmbeddingsResponse', {
+    'status': fields.String(description='Status of the operation'),
+    'message': fields.String(description='Detailed message'),
+    'total': fields.Integer(description='Total number of embeddings'),
+    'total_pages': fields.Integer(description='Total number of pages'),
+    'current_page': fields.Integer(description='Current page number'),
+    'items_per_page': fields.Integer(description='Number of items per page'),
+    'embeddings': fields.List(fields.Nested(embedding_model), description='List of embeddings')
+})
+
+# Model cho response của metadata
+metadata_model = nlp_ns.model('Metadata', {
+    'id': fields.String(description='Location ID'),
+    'ten_dia_diem': fields.String(description='Location name'),
+    'mo_ta': fields.String(description='Location description'),
+    'additional_info': fields.Raw(description='Additional metadata information')
+})
+
+metadata_response_model = nlp_ns.model('MetadataResponse', {
+    'status': fields.String(description='Status of the operation'),
+    'message': fields.String(description='Detailed message'),
+    'total': fields.Integer(description='Total number of metadata entries'),
+    'total_pages': fields.Integer(description='Total number of pages'),
+    'current_page': fields.Integer(description='Current page number'),
+    'items_per_page': fields.Integer(description='Number of items per page'),
+    'metadata': fields.List(fields.Nested(metadata_model), description='List of metadata entries')
+})
+
+# Khởi tạo ChromaDB client
+workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+chroma_client = chromadb.PersistentClient(path=os.path.join(workspace_root, 'src', 'nlp_model', 'data', 'chroma_db'))
+
+# Sử dụng sentence-transformers làm embedding function
+sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="keepitreal/vietnamese-sbert"
+)
+
+# Lấy collection
+collection = chroma_client.get_collection(
+    name="diadiem_collection",
+    embedding_function=sentence_transformer_ef
+)
+
+# Ngưỡng tối thiểu cho độ tương đồng
+MIN_SIMILARITY_THRESHOLD = 0.1
+
+def normalize_similarity(distance):
+    """
+    Chuyển đổi khoảng cách thành điểm tương đồng trong khoảng [0,1]
+    Sử dụng hàm sigmoid để chuẩn hóa
+    """
+    # Chuyển đổi distance thành similarity bằng hàm sigmoid
+    similarity = 1 / (1 + np.exp(distance))
+    # Chuẩn hóa về khoảng [0,1]
+    return float(similarity)
+
+def paginate_results(results, page, limit, sort_by='id', sort_order='asc'):
+    """
+    Phân trang và sắp xếp kết quả
+    """
+    if not results:
+        return [], 0, 0
+    
+    # Sắp xếp kết quả
+    if sort_order.lower() == 'desc':
+        results = sorted(results, key=lambda x: x.get(sort_by, ''), reverse=True)
+    else:
+        results = sorted(results, key=lambda x: x.get(sort_by, ''))
+    
+    # Tính toán phân trang
+    total = len(results)
+    total_pages = math.ceil(total / limit)
+    page = min(max(1, page), total_pages)  # Đảm bảo page nằm trong khoảng hợp lệ
+    
+    # Lấy kết quả cho trang hiện tại
+    start_idx = (page - 1) * limit
+    end_idx = start_idx + limit
+    paginated_results = results[start_idx:end_idx]
+    
+    return paginated_results, total, total_pages
+
+@nlp_ns.route('/search')
+class SearchLocation(Resource):
+    @nlp_ns.expect(question_model)
+    @nlp_ns.marshal_with(search_response_model)
+    def post(self):
+        """Search for travel locations based on user question"""
+        try:
+            # Lấy câu hỏi từ request
+            data = request.get_json()
+            question = data.get('question')
+            
+            if not question:
+                return {
+                    'status': 'error',
+                    'message': 'Question is required',
+                    'results': []
+                }, 400
+            
+            # Thực hiện tìm kiếm
+            results = collection.query(
+                query_texts=[question],
+                n_results=5
+            )
+            
+            # Format kết quả
+            formatted_results = []
+            for i, (doc, metadata, distance) in enumerate(zip(results['documents'][0], results['metadatas'][0], results['distances'][0])):
+                # Chuyển đổi distance thành similarity score
+                similarity_score = normalize_similarity(distance)
+                
+                # Chỉ thêm kết quả có độ tương đồng đủ cao
+                # if similarity_score >= MIN_SIMILARITY_THRESHOLD:
+                formatted_results.append({
+                    'id': metadata['id'],
+                    'ten_dia_diem': metadata['ten_dia_diem'],
+                    'mo_ta': metadata['mo_ta'],
+                    'similarity': similarity_score
+                })
+            
+            # Sắp xếp kết quả theo similarity giảm dần
+            formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
+            
+            # Giới hạn số lượng kết quả trả về
+            formatted_results = formatted_results[:5]
+            
+            return {
+                'status': 'success',
+                'message': f'Found {len(formatted_results)} relevant locations',
+                'results': formatted_results
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e),
+                'results': []
+            }, 500
+
+@nlp_ns.route('/embeddings')
+class GetEmbeddings(Resource):
+    @nlp_ns.expect(pagination_parser)
+    @nlp_ns.marshal_with(embeddings_response_model)
+    def get(self):
+        """Get embeddings from the database with pagination"""
+        try:
+            # Parse parameters
+            args = pagination_parser.parse_args()
+            page = args['page']
+            limit = args['limit']
+            sort_by = args['sort_by']
+            sort_order = args['sort_order']
+            
+            # Validate parameters
+            if limit < 1 or limit > 100:
+                return {
+                    'status': 'error',
+                    'message': 'Limit must be between 1 and 100',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'embeddings': []
+                }, 400
+            
+            # Lấy tất cả dữ liệu
+            results = collection.get(
+                include=['embeddings', 'documents', 'metadatas']
+            )
+            
+            if not results or not results['ids']:
+                return {
+                    'status': 'error',
+                    'message': 'No data found in the collection',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'embeddings': []
+                }, 404
+            
+            # Format kết quả
+            formatted_embeddings = []
+            for i, (id, embedding, document) in enumerate(zip(results['ids'], results['embeddings'], results['documents'])):
+                if embedding is not None:
+                    formatted_embeddings.append({
+                        'id': id,
+                        'embedding': embedding.tolist() if isinstance(embedding, np.ndarray) else embedding,
+                        'document': document
+                    })
+            
+            if not formatted_embeddings:
+                return {
+                    'status': 'error',
+                    'message': 'No embeddings found in the collection',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'embeddings': []
+                }, 404
+            
+            # Phân trang kết quả
+            paginated_results, total, total_pages = paginate_results(
+                formatted_embeddings, page, limit, sort_by, sort_order
+            )
+            
+            return {
+                'status': 'success',
+                'message': f'Retrieved {len(paginated_results)} embeddings',
+                'total': total,
+                'total_pages': total_pages,
+                'current_page': page,
+                'items_per_page': limit,
+                'embeddings': paginated_results
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e),
+                'total': 0,
+                'total_pages': 0,
+                'current_page': page,
+                'items_per_page': limit,
+                'embeddings': []
+            }, 500
+
+@nlp_ns.route('/metadata')
+class GetMetadata(Resource):
+    @nlp_ns.expect(pagination_parser)
+    @nlp_ns.marshal_with(metadata_response_model)
+    def get(self):
+        """Get metadata from the database with pagination"""
+        try:
+            # Parse parameters
+            args = pagination_parser.parse_args()
+            page = args['page']
+            limit = args['limit']
+            sort_by = args['sort_by']
+            sort_order = args['sort_order']
+            
+            # Validate parameters
+            if limit < 1 or limit > 100:
+                return {
+                    'status': 'error',
+                    'message': 'Limit must be between 1 and 100',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'metadata': []
+                }, 400
+            
+            # Lấy tất cả dữ liệu
+            results = collection.get(
+                include=['metadatas']
+            )
+            
+            if not results or not results['ids']:
+                return {
+                    'status': 'error',
+                    'message': 'No data found in the collection',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'metadata': []
+                }, 404
+            
+            # Format kết quả
+            formatted_metadata = []
+            for i, (id, metadata) in enumerate(zip(results['ids'], results['metadatas'])):
+                if metadata is not None:
+                    formatted_metadata.append({
+                        'id': id,
+                        'ten_dia_diem': metadata.get('ten_dia_diem', ''),
+                        'mo_ta': metadata.get('mo_ta', ''),
+                        'additional_info': {k: v for k, v in metadata.items() if k not in ['ten_dia_diem', 'mo_ta']}
+                    })
+            
+            if not formatted_metadata:
+                return {
+                    'status': 'error',
+                    'message': 'No metadata found in the collection',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'metadata': []
+                }, 404
+            
+            # Phân trang kết quả
+            paginated_results, total, total_pages = paginate_results(
+                formatted_metadata, page, limit, sort_by, sort_order
+            )
+            
+            return {
+                'status': 'success',
+                'message': f'Retrieved {len(paginated_results)} metadata entries',
+                'total': total,
+                'total_pages': total_pages,
+                'current_page': page,
+                'items_per_page': limit,
+                'metadata': paginated_results
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e),
+                'total': 0,
+                'total_pages': 0,
+                'current_page': page,
+                'items_per_page': limit,
+                'metadata': []
+            }, 500
+
+@nlp_ns.route('/sync-diadiem')
+class SyncDiadiem(Resource):
+    @nlp_ns.marshal_with(sync_response_model)
+    def post(self):
+        """Sync and process diadiem.csv data"""
+        try:
+            # Xử lý file diadiem.csv
+            process_diadiem()
+            
+            return {
+                'status': 'success',
+                'message': 'Successfully processed diadiem.csv and generated vectors',
+                'processed_count': 1  # Số lượng file đã xử lý
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e),
+                'processed_count': 0
+            }, 500 
