@@ -604,7 +604,7 @@ class ChatResponse(Resource):
             suggested_activities = [
                 result['ten_dia_diem']
                 for result in search_results
-                if result['similarity'] > 0.7
+                # if result['similarity'] > 0.7
             ]
             
             return {
