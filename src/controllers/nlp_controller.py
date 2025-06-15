@@ -110,14 +110,41 @@ MIN_SIMILARITY_THRESHOLD = 0.1
 
 def normalize_similarity(distance):
     """
-    Chuyển đổi khoảng cách thành điểm tương đồng trong khoảng [0,1]
-    Sử dụng hàm sigmoid để chuẩn hóa
+    Chuyển đổi khoảng cách thành điểm tương đồng trong khoảng [0.3,1]
+    Sử dụng hàm sigmoid có điều chỉnh để đảm bảo phân phối điểm phù hợp
     """
     # Chuyển đổi distance thành similarity bằng hàm sigmoid
     similarity = 1 / (1 + np.exp(distance))
-    # Chuẩn hóa về khoảng [0.3,1] để đảm bảo điểm tối thiểu
-    normalized = 0.3 + (0.7 * similarity)
+    
+    # Chuẩn hóa về khoảng [0.3,1] với phân phối phi tuyến
+    # Sử dụng hàm mũ để tăng độ phân biệt giữa các mức độ tương đồng
+    normalized = 0.3 + (0.7 * (similarity ** 1.5))
     return float(normalized)
+
+def calculate_semantic_score(distance, question_words, metadata):
+    """
+    Tính điểm ngữ nghĩa dựa trên khoảng cách vector và các yếu tố ngữ nghĩa
+    """
+    # Điểm cơ bản từ khoảng cách vector
+    base_score = normalize_similarity(distance)
+    
+    # Tính điểm từ các yếu tố ngữ nghĩa
+    semantic_factors = {
+        'tu_khoa': 0.2,  # Từ khóa có trọng số cao nhất
+        'loai_dia_diem': 0.15,
+        'khu_vuc': 0.15,
+        'dia_chi': 0.1,
+        'thoi_gian_hoat_dong': 0.1,
+        'gia_ve': 0.1
+    }
+    
+    semantic_score = base_score
+    for field, weight in semantic_factors.items():
+        value = metadata.get(field, '').lower()
+        if any(word in value for word in question_words):
+            semantic_score += weight
+    
+    return min(semantic_score, 1.0)
 
 def paginate_results(results, page, limit, sort_by='id', sort_order='asc'):
     """
@@ -190,6 +217,7 @@ class SearchLocation(Resource):
             
             # Chuẩn hóa câu hỏi
             question = question.strip().lower()
+            question_words = set(question.split())
             
             # Thực hiện tìm kiếm
             results = collection.query(
@@ -201,54 +229,16 @@ class SearchLocation(Resource):
             # Format kết quả
             formatted_results = []
             for i, (doc, metadata, distance) in enumerate(zip(results['documents'][0], results['metadatas'][0], results['distances'][0])):
-                # Chuyển đổi distance thành similarity score cơ bản
-                base_similarity = normalize_similarity(distance)
-                
-                # Tính điểm tương đồng dựa trên nhiều yếu tố
-                final_score = base_similarity
-                
-                # Tăng điểm nếu có từ khóa trùng khớp
-                keywords = metadata.get('tu_khoa', '').lower().split('|')
-                question_words = set(question.split())
-                keyword_matches = sum(1 for kw in keywords if kw.strip() in question_words)
-                if keyword_matches > 0:
-                    final_score += 0.15 * keyword_matches
-                
-                # Tăng điểm nếu loại địa điểm phù hợp
-                loai_dia_diem = metadata.get('loai_dia_diem', '').lower()
-                if any(word in loai_dia_diem for word in question_words):
-                    final_score += 0.2
-                
-                # Tăng điểm nếu khu vực phù hợp
-                khu_vuc = metadata.get('khu_vuc', '').lower()
-                if any(word in khu_vuc for word in question_words):
-                    final_score += 0.15
-                
-                # Tăng điểm nếu địa chỉ phù hợp
-                dia_chi = metadata.get('dia_chi', '').lower()
-                if any(word in dia_chi for word in question_words):
-                    final_score += 0.1
-                
-                # Tăng điểm nếu thời gian hoạt động phù hợp
-                thoi_gian = metadata.get('thoi_gian_hoat_dong', '').lower()
-                if any(word in thoi_gian for word in question_words):
-                    final_score += 0.1
-                
-                # Tăng điểm nếu giá vé phù hợp với ngữ cảnh
-                gia_ve = metadata.get('gia_ve', '').lower()
-                if any(word in gia_ve for word in question_words):
-                    final_score += 0.1
-                
-                # Giới hạn điểm tối đa là 1.0
-                final_score = min(final_score, 1.0)
+                # Tính điểm tương đồng
+                similarity_score = calculate_semantic_score(distance, question_words, metadata)
                 
                 # Chỉ thêm kết quả nếu điểm similarity > ngưỡng tối thiểu
-                if final_score > MIN_SIMILARITY_THRESHOLD:
+                if similarity_score > MIN_SIMILARITY_THRESHOLD:
                     formatted_results.append({
                         'id': metadata['id'],
                         'ten_dia_diem': metadata['ten_dia_diem'],
                         'mo_ta': metadata['mo_ta'],
-                        'similarity': round(final_score, 2)  # Làm tròn đến 2 chữ số thập phân
+                        'similarity': round(similarity_score, 2)  # Làm tròn đến 2 chữ số thập phân
                     })
             
             # Sắp xếp kết quả theo similarity giảm dần
