@@ -9,17 +9,29 @@ def process_diadiem():
     workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     csv_path = os.path.join(workspace_root, 'src', 'scape', 'diadiem.csv')
     
-    # Đọc file CSV với encoding phù hợp cho tiếng Việt
-    try:
-        # Thử đọc với utf-8-sig trước (có BOM)
-        df = pd.read_csv(csv_path, encoding='utf-8-sig')
-    except UnicodeDecodeError:
-        try:
-            # Nếu không được thì thử với cp1252
-            df = pd.read_csv(csv_path, encoding='cp1252')
-        except UnicodeDecodeError:
-            # Cuối cùng thử với utf-8
-            df = pd.read_csv(csv_path, encoding='utf-8')
+    # Kiểm tra file tồn tại
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"Không tìm thấy file diadiem.csv tại đường dẫn: {csv_path}")
+
+    # Đọc file CSV
+    df = pd.read_csv(csv_path, encoding='utf-8')
+    
+    # Chuẩn hóa dữ liệu
+    df['ten_dia_diem'] = df['ten_dia_diem'].str.strip()
+    df['mo_ta'] = df['mo_ta'].str.strip()
+    
+    # Tạo document text phong phú hơn
+    df['document'] = df.apply(lambda row: f"""
+        Địa điểm: {row['ten_dia_diem']}
+        Loại địa điểm: {row.get('loai_dia_diem', '')}
+        Khu vực: {row.get('khu_vuc', '')}
+        Địa chỉ: {row.get('dia_chi', '')}
+        Mô tả: {row['mo_ta']}
+        Từ khóa: {row.get('tu_khoa', '')}
+        Thời gian hoạt động: {row.get('thoi_gian_hoat_dong', '')}
+        Giá vé: {row.get('gia_ve', '')}
+        Đánh giá: {row.get('danh_gia', '')}
+    """.strip(), axis=1)
     
     # Khởi tạo ChromaDB client
     chroma_client = chromadb.PersistentClient(path=os.path.join(workspace_root, 'src', 'nlp_model', 'data', 'chroma_db'))
@@ -29,57 +41,25 @@ def process_diadiem():
         model_name="keepitreal/vietnamese-sbert"
     )
     
-    # Tạo collection mới hoặc lấy collection đã tồn tại
-    collection = chroma_client.get_or_create_collection(
+    # Xóa collection cũ nếu tồn tại
+    try:
+        chroma_client.delete_collection("diadiem_collection")
+        print("Đã xóa collection cũ")
+    except:
+        print("Collection chưa tồn tại, tạo mới")
+    
+    # Tạo collection mới
+    collection = chroma_client.create_collection(
         name="diadiem_collection",
         embedding_function=sentence_transformer_ef
     )
     
-    # Chuẩn bị dữ liệu để thêm vào ChromaDB
-    documents = []
-    metadatas = []
-    ids = []
-    
-    for _, row in df.iterrows():
-        # Tạo nội dung từ các cột
-        content = []
-        if pd.notna(row['mo_ta']):
-            content.append(row['mo_ta'])
-        
-        # Tạo document text
-        doc_text = f"{row['ten_dia_diem']} {row['mo_ta'] if pd.notna(row['mo_ta']) else ''}"
-        
-        # Tạo metadata
-        metadata = {
-            'id': str(row['id']),
-            'ten_dia_diem': row['ten_dia_diem'],
-            'mo_ta': row['mo_ta'] if pd.notna(row['mo_ta']) else ''
-        }
-        
-        documents.append(doc_text)
-        metadatas.append(metadata)
-        ids.append(str(row['id']))
-    
-    # Thêm dữ liệu vào collection
+    # Thêm dữ liệu mới
     collection.add(
-        documents=documents,
-        metadatas=metadatas,
-        ids=ids
+        ids=df['id'].astype(str).tolist(),
+        documents=df['document'].tolist(),
+        metadatas=df.to_dict('records')
     )
     
-    print(f"Đã xử lý và lưu {len(documents)} địa điểm vào ChromaDB")
-    
-    # Thử tìm kiếm
-    query = "Gợi ý địa điểm tham quan ở Sài Gòn"
-    results = collection.query(
-        query_texts=[query],
-        n_results=3
-    )
-    
-    print("\nKết quả tìm kiếm mẫu:")
-    for i, (doc, metadata, distance) in enumerate(zip(results['documents'][0], results['metadatas'][0], results['distances'][0])):
-        print(f"\nKết quả {i+1}:")
-        print(f"ID: {metadata['id']}")
-        print(f"Địa điểm: {metadata['ten_dia_diem']}")
-        print(f"Độ tương đồng: {1 - distance:.2f}")  # Chuyển đổi distance thành similarity
-        print(f"Mô tả: {metadata['mo_ta']}")
+    print(f"Đã xử lý và lưu {len(df)} địa điểm vào ChromaDB")
+

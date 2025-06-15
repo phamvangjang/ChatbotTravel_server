@@ -86,11 +86,24 @@ sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFuncti
     model_name="keepitreal/vietnamese-sbert"
 )
 
+def get_or_create_collection():
+    """Get existing collection or create new one if not exists"""
+    try:
+        collection = chroma_client.get_collection(
+            name="diadiem_collection",
+            embedding_function=sentence_transformer_ef
+        )
+        return collection
+    except Exception as e:
+        print(f"Collection not found, creating new one: {str(e)}")
+        collection = chroma_client.create_collection(
+            name="diadiem_collection",
+            embedding_function=sentence_transformer_ef
+        )
+        return collection
+
 # Lấy collection
-collection = chroma_client.get_collection(
-    name="diadiem_collection",
-    embedding_function=sentence_transformer_ef
-)
+collection = get_or_create_collection()
 
 # Ngưỡng tối thiểu cho độ tương đồng
 MIN_SIMILARITY_THRESHOLD = 0.1
@@ -102,8 +115,9 @@ def normalize_similarity(distance):
     """
     # Chuyển đổi distance thành similarity bằng hàm sigmoid
     similarity = 1 / (1 + np.exp(distance))
-    # Chuẩn hóa về khoảng [0,1]
-    return float(similarity)
+    # Chuẩn hóa về khoảng [0.3,1] để đảm bảo điểm tối thiểu
+    normalized = 0.3 + (0.7 * similarity)
+    return float(normalized)
 
 def paginate_results(results, page, limit, sort_by='id', sort_order='asc'):
     """
@@ -148,32 +162,107 @@ class SearchLocation(Resource):
                     'results': []
                 }, 400
             
+            # Kiểm tra và lấy collection
+            try:
+                collection = get_or_create_collection()
+            except Exception as e:
+                return {
+                    'status': 'error',
+                    'message': f'Error accessing collection. Please run sync first: {str(e)}',
+                    'results': []
+                }, 500
+            
+            # Kiểm tra collection có dữ liệu không
+            try:
+                count = collection.count()
+                if count == 0:
+                    return {
+                        'status': 'error',
+                        'message': 'No data in collection. Please run sync first.',
+                        'results': []
+                    }, 404
+            except Exception as e:
+                return {
+                    'status': 'error',
+                    'message': f'Error checking collection data: {str(e)}',
+                    'results': []
+                }, 500
+            
+            # Chuẩn hóa câu hỏi
+            question = question.strip().lower()
+            
             # Thực hiện tìm kiếm
             results = collection.query(
                 query_texts=[question],
-                n_results=5
+                n_results=5,
+                include=['documents', 'metadatas', 'distances']
             )
             
             # Format kết quả
             formatted_results = []
             for i, (doc, metadata, distance) in enumerate(zip(results['documents'][0], results['metadatas'][0], results['distances'][0])):
-                # Chuyển đổi distance thành similarity score
-                similarity_score = normalize_similarity(distance)
+                # Chuyển đổi distance thành similarity score cơ bản
+                base_similarity = normalize_similarity(distance)
                 
-                # Chỉ thêm kết quả có độ tương đồng đủ cao
-                # if similarity_score >= MIN_SIMILARITY_THRESHOLD:
-                formatted_results.append({
-                    'id': metadata['id'],
-                    'ten_dia_diem': metadata['ten_dia_diem'],
-                    'mo_ta': metadata['mo_ta'],
-                    'similarity': similarity_score
-                })
+                # Tính điểm tương đồng dựa trên nhiều yếu tố
+                final_score = base_similarity
+                
+                # Tăng điểm nếu có từ khóa trùng khớp
+                keywords = metadata.get('tu_khoa', '').lower().split('|')
+                question_words = set(question.split())
+                keyword_matches = sum(1 for kw in keywords if kw.strip() in question_words)
+                if keyword_matches > 0:
+                    final_score += 0.15 * keyword_matches
+                
+                # Tăng điểm nếu loại địa điểm phù hợp
+                loai_dia_diem = metadata.get('loai_dia_diem', '').lower()
+                if any(word in loai_dia_diem for word in question_words):
+                    final_score += 0.2
+                
+                # Tăng điểm nếu khu vực phù hợp
+                khu_vuc = metadata.get('khu_vuc', '').lower()
+                if any(word in khu_vuc for word in question_words):
+                    final_score += 0.15
+                
+                # Tăng điểm nếu địa chỉ phù hợp
+                dia_chi = metadata.get('dia_chi', '').lower()
+                if any(word in dia_chi for word in question_words):
+                    final_score += 0.1
+                
+                # Tăng điểm nếu thời gian hoạt động phù hợp
+                thoi_gian = metadata.get('thoi_gian_hoat_dong', '').lower()
+                if any(word in thoi_gian for word in question_words):
+                    final_score += 0.1
+                
+                # Tăng điểm nếu giá vé phù hợp với ngữ cảnh
+                gia_ve = metadata.get('gia_ve', '').lower()
+                if any(word in gia_ve for word in question_words):
+                    final_score += 0.1
+                
+                # Giới hạn điểm tối đa là 1.0
+                final_score = min(final_score, 1.0)
+                
+                # Chỉ thêm kết quả nếu điểm similarity > ngưỡng tối thiểu
+                if final_score > MIN_SIMILARITY_THRESHOLD:
+                    formatted_results.append({
+                        'id': metadata['id'],
+                        'ten_dia_diem': metadata['ten_dia_diem'],
+                        'mo_ta': metadata['mo_ta'],
+                        'similarity': round(final_score, 2)  # Làm tròn đến 2 chữ số thập phân
+                    })
             
             # Sắp xếp kết quả theo similarity giảm dần
             formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
             
             # Giới hạn số lượng kết quả trả về
             formatted_results = formatted_results[:5]
+            
+            if not formatted_results:
+                return {
+                    'status': 'error',
+                    'message': 'No relevant locations found for your question',
+                    'results': []
+                }, 404
             
             return {
                 'status': 'success',
@@ -184,7 +273,7 @@ class SearchLocation(Resource):
         except Exception as e:
             return {
                 'status': 'error',
-                'message': str(e),
+                'message': f'Error during search: {str(e)}',
                 'results': []
             }, 500
 
@@ -303,15 +392,43 @@ class GetMetadata(Resource):
                     'metadata': []
                 }, 400
             
+            # Kiểm tra collection tồn tại
+            try:
+                collection = chroma_client.get_collection(
+                    name="diadiem_collection",
+                    embedding_function=sentence_transformer_ef
+                )
+            except Exception as e:
+                return {
+                    'status': 'error',
+                    'message': f'Collection not found. Please run sync first: {str(e)}',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'metadata': []
+                }, 404
+            
             # Lấy tất cả dữ liệu
-            results = collection.get(
-                include=['metadatas']
-            )
+            try:
+                results = collection.get(
+                    include=['metadatas']
+                )
+            except Exception as e:
+                return {
+                    'status': 'error',
+                    'message': f'Error getting data from collection: {str(e)}',
+                    'total': 0,
+                    'total_pages': 0,
+                    'current_page': page,
+                    'items_per_page': limit,
+                    'metadata': []
+                }, 500
             
             if not results or not results['ids']:
                 return {
                     'status': 'error',
-                    'message': 'No data found in the collection',
+                    'message': 'No data found in the collection. Please run sync first.',
                     'total': 0,
                     'total_pages': 0,
                     'current_page': page,
@@ -333,7 +450,7 @@ class GetMetadata(Resource):
             if not formatted_metadata:
                 return {
                     'status': 'error',
-                    'message': 'No metadata found in the collection',
+                    'message': 'No metadata found in the collection. Please check your data.',
                     'total': 0,
                     'total_pages': 0,
                     'current_page': page,
@@ -359,7 +476,7 @@ class GetMetadata(Resource):
         except Exception as e:
             return {
                 'status': 'error',
-                'message': str(e),
+                'message': f'Unexpected error: {str(e)}',
                 'total': 0,
                 'total_pages': 0,
                 'current_page': page,
