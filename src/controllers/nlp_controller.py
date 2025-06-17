@@ -530,18 +530,18 @@ def generate_natural_response(base_response, question):
     prompt = f"""Bạn là một trợ lý du lịch thông minh. Hãy viết lại câu trả lời sau một cách tự nhiên và thân thiện hơn, 
     nhưng vẫn giữ nguyên thông tin chính. Thêm một câu hỏi ở cuối để tiếp tục cuộc trò chuyện.
 
-Câu hỏi của người dùng: {question}
+    Câu hỏi của người dùng: {question}
 
-Câu trả lời hiện tại:
-{base_response}
+    Câu trả lời hiện tại:
+    {base_response}
 
-Yêu cầu:
-1. Giữ nguyên tất cả thông tin về địa điểm
-2. Làm cho câu trả lời tự nhiên và thân thiện hơn
-3. Thêm một câu hỏi ở cuối để tiếp tục cuộc trò chuyện
-4. Giữ độ dài tương đương với câu trả lời gốc
+    Yêu cầu:
+    1. Giữ nguyên tất cả thông tin về địa điểm
+    2. Làm cho câu trả lời tự nhiên và thân thiện hơn
+    3. Thêm một câu hỏi ở cuối để tiếp tục cuộc trò chuyện
+    4. Giữ độ dài tương đương với câu trả lời gốc
 
-Hãy trả lời bằng tiếng Việt."""
+    Hãy trả lời bằng tiếng Việt."""
 
     try:
         response = openai.ChatCompletion.create(
@@ -568,7 +568,7 @@ class ChatResponse(Resource):
         'suggested_activities': fields.List(fields.String)
     }))
     def post(self):
-        """Generate natural response based on search results"""
+        """Generate natural response based on vector search results"""
         try:
             # Lấy câu hỏi từ request
             data = request.get_json()
@@ -582,9 +582,9 @@ class ChatResponse(Resource):
                     'suggested_activities': []
                 }, 400
             
-            # Thực hiện tìm kiếm trước
+            # Tìm kiếm địa điểm phù hợp bằng vector
             search_response = self.search_locations(question)
-            if search_response[1] != 200:  # Nếu có lỗi trong tìm kiếm
+            if search_response[1] != 200:
                 return {
                     'status': 'error',
                     'message': search_response[0]['message'],
@@ -595,7 +595,7 @@ class ChatResponse(Resource):
             search_results = search_response[0]['results']
             
             # Tạo câu trả lời cơ bản từ kết quả tìm kiếm
-            base_response = format_search_results(search_results)
+            base_response = self.format_search_results(search_results)
             
             # Làm cho câu trả lời tự nhiên hơn bằng GPT
             natural_response = generate_natural_response(base_response, question)
@@ -604,7 +604,7 @@ class ChatResponse(Resource):
             suggested_activities = [
                 result['ten_dia_diem']
                 for result in search_results
-                # if result['similarity'] > 0.7
+                if result['similarity'] > 0.5  # Chỉ lấy các địa điểm có độ tương đồng cao
             ]
             
             return {
@@ -623,15 +623,16 @@ class ChatResponse(Resource):
             }, 500
     
     def search_locations(self, question):
-        """Helper method to perform search"""
+        """Helper method to perform vector search"""
         try:
             collection = get_or_create_collection()
             question = question.strip().lower()
             question_words = set(question.split())
             
+            # Tìm kiếm với vector
             results = collection.query(
                 query_texts=[question],
-                n_results=5,
+                n_results=10,  # Tăng số lượng kết quả để có nhiều lựa chọn hơn
                 include=['documents', 'metadatas', 'distances']
             )
             
@@ -646,8 +647,8 @@ class ChatResponse(Resource):
                         'similarity': round(similarity_score, 2)
                     })
             
+            # Sắp xếp kết quả theo độ tương đồng
             formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
-            formatted_results = formatted_results[:5]
             
             if not formatted_results:
                 return {
@@ -667,4 +668,28 @@ class ChatResponse(Resource):
                 'status': 'error',
                 'message': f'Error during search: {str(e)}',
                 'results': []
-            }, 500 
+            }, 500
+    
+    def format_search_results(self, search_results):
+        """Format kết quả tìm kiếm thành văn bản có cấu trúc"""
+        formatted_text = []
+        
+        # Lọc kết quả có độ tương đồng cao
+        high_similarity_results = [r for r in search_results if r['similarity'] > 0.7]
+        
+        if high_similarity_results:
+            formatted_text.append("Dựa trên tìm kiếm của bạn, tôi tìm thấy những địa điểm phù hợp sau:")
+            
+            for result in high_similarity_results:
+                formatted_text.append(f"\n- {result['ten_dia_diem']}")
+                formatted_text.append(f"  {result['mo_ta']}")
+        
+        # Thêm các kết quả có độ tương đồng trung bình
+        medium_similarity_results = [r for r in search_results if 0.5 <= r['similarity'] <= 0.7]
+        if medium_similarity_results:
+            formatted_text.append("\nNgoài ra, bạn có thể tham khảo thêm:")
+            for result in medium_similarity_results:
+                formatted_text.append(f"\n- {result['ten_dia_diem']}")
+                formatted_text.append(f"  {result['mo_ta']}")
+        
+        return "\n".join(formatted_text) 
