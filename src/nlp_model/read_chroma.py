@@ -51,6 +51,4 @@ def read_chroma_data():
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
     print(f"\nĐã lưu dữ liệu chi tiết vào file: {output_file}")
-
-if __name__ == "__main__":
-    read_chroma_data() 
+ 

@@ -29,6 +29,9 @@ answer_model = nlp_ns.model('Answer', {
     'id': fields.String(description='Location ID'),
     'ten_dia_diem': fields.String(description='Location name'),
     'mo_ta': fields.String(description='Location description'),
+    'loai_dia_diem': fields.String(description='Location type'),
+    'khu_vuc': fields.String(description='Area/Region'),
+    'dia_chi': fields.String(description='Address'),
     'similarity': fields.Float(description='Similarity score (0-1)')
 })
 
@@ -132,12 +135,12 @@ def calculate_semantic_score(distance, question_words, metadata):
     
     # Tính điểm từ các yếu tố ngữ nghĩa
     semantic_factors = {
-        'tu_khoa': 0.2,  # Từ khóa có trọng số cao nhất
-        'loai_dia_diem': 0.15,
-        'khu_vuc': 0.15,
-        'dia_chi': 0.1,
-        'thoi_gian_hoat_dong': 0.1,
-        'gia_ve': 0.1
+        'tu_khoa': 0.25,  # Từ khóa có trọng số cao nhất
+        'loai_dia_diem': 0.2,
+        'khu_vuc': 0.2,
+        'dia_chi': 0.15,
+        # 'thoi_gian_hoat_dong': 0.1,
+        # 'gia_ve': 0.1
     }
     
     semantic_score = base_score
@@ -224,7 +227,7 @@ class SearchLocation(Resource):
             # Thực hiện tìm kiếm
             results = collection.query(
                 query_texts=[question],
-                n_results=5,
+                n_results=8,
                 include=['documents', 'metadatas', 'distances']
             )
             
@@ -240,6 +243,9 @@ class SearchLocation(Resource):
                         'id': metadata['id'],
                         'ten_dia_diem': metadata['ten_dia_diem'],
                         'mo_ta': metadata['mo_ta'],
+                        'loai_dia_diem': metadata['loai_dia_diem'],
+                        'khu_vuc': metadata['khu_vuc'],
+                        'dia_chi': metadata['dia_chi'],
                         'similarity': round(similarity_score, 2)  # Làm tròn đến 2 chữ số thập phân
                     })
             
@@ -247,7 +253,7 @@ class SearchLocation(Resource):
             formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
             
             # Giới hạn số lượng kết quả trả về
-            formatted_results = formatted_results[:5]
+            formatted_results = formatted_results[:8]
             
             if not formatted_results:
                 return {
