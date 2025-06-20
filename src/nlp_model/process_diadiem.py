@@ -38,7 +38,7 @@ def process_diadiem():
     
     # Sử dụng sentence-transformers làm embedding function
     sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="keepitreal/vietnamese-sbert"
+        model_name="paraphrase-multilingual-MiniLM-L12-v2"
     )
     
     # Xóa collection cũ nếu tồn tại
