@@ -11,4 +11,3 @@ class Conversation(db.Model):
     source_language = db.Column(db.String(10))
     title = db.Column(db.String(100), nullable=True)
     messages = db.relationship('Message', backref='conversation', lazy=True)
-    itinerary_suggestions = db.relationship('ItinerarySuggestion', backref='conversation', lazy=True) 

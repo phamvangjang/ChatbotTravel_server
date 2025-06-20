@@ -32,11 +32,11 @@ def create_app():
     # Add namespaces
     from src.controllers.auth_controller import auth_ns
     from src.controllers.chatting_controller import chatting_ns
-    from src.controllers.nlp_controller import nlp_ns
+    from src.controllers.travel_chatbot_controller import travel_chatbot_ns
     
     api.add_namespace(auth_ns, path='/api/auth')
     api.add_namespace(chatting_ns, path='/api/chatting')
-    api.add_namespace(nlp_ns, path='/api/nlp')
+    api.add_namespace(travel_chatbot_ns, path='/api/travel-chatbot')
     
     # Create database tables
     with app.app_context():

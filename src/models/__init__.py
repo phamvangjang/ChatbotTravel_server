@@ -3,7 +3,8 @@ from src.models.user import User
 from src.models.otp import OTP
 from src.models.conversation import Conversation
 from src.models.message import Message
-from src.models.itinerary import ItinerarySuggestion, ItineraryActivity
+from src.models.attraction import Attraction
+from src.models.itinerary import ItineraryItem
 
 __all__ = [
     'db',
@@ -11,6 +12,6 @@ __all__ = [
     'OTP',
     'Conversation',
     'Message',
-    'ItinerarySuggestion',
-    'ItineraryActivity'
+    'Attraction',
+    'ItineraryItem'
 ] 
