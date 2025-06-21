@@ -6,6 +6,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 import numpy as np
 import re
+import traceback
 
 # Khởi tạo OpenAI client
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -78,6 +79,10 @@ def apply_filters_to_results(results: List[Dict], filters: Dict[str, Any]) -> Li
     if not filters:
         return results
     
+    print("=== DEBUG: apply_filters_to_results ===")
+    print(f"Input filters: {filters}")
+    print(f"Input results count: {len(results)}")
+    
     filtered_results = []
     
     for result in results:
@@ -85,62 +90,104 @@ def apply_filters_to_results(results: List[Dict], filters: Dict[str, Any]) -> Li
         match_score = 0
         total_criteria = 0
         
-        # Lọc theo loại địa điểm
+        # Lọc theo loại địa điểm (nếu có)
         if filters.get('loai_dia_diem'):
             total_criteria += 1
-            filter_type = str(filters['loai_dia_diem']).lower().strip()
-            result_type = str(metadata.get('loai_dia_diem', '')).lower().strip()
+            target_loai = filters['loai_dia_diem'].lower()
             
-            if filter_type and result_type:
-                if filter_type in result_type or result_type in filter_type:
-                    match_score += 1
-                elif any(keyword in result_type for keyword in filter_type.split()):
-                    match_score += 0.7
+            # Kiểm tra trong các trường có thể chứa loại địa điểm
+            loai_fields = [
+                metadata.get('loai_dia_diem', '').lower(),
+                metadata.get('category', '').lower(),
+                metadata.get('type', '').lower()
+            ]
+            
+            # Tìm kiếm lỏng hơn - chỉ cần chứa từ khóa
+            if any(target_loai in field for field in loai_fields if field):
+                match_score += 1
+                print(f"✓ Loại địa điểm match: {target_loai} in {loai_fields}")
+            else:
+                print(f"✗ Loại địa điểm no match: {target_loai} vs {loai_fields}")
         
-        # Lọc theo khu vực
+        # Lọc theo khu vực (nếu có)
         if filters.get('khu_vuc'):
             total_criteria += 1
-            filter_area = str(filters['khu_vuc']).lower().strip()
-            result_area = str(metadata.get('khu_vuc', '')).lower().strip()
+            target_khu_vuc = filters['khu_vuc'].lower()
             
-            # Bỏ qua nếu khu_vuc là "Thành phố Hồ Chí Minh" hoặc tương tự (quá chung chung)
-            if filter_area in ['thành phố hồ chí minh', 'tp.hcm', 'tp hcm', 'ho chi minh city']:
-                # Nếu người dùng chỉ nói chung chung về TP.HCM, không lọc theo khu vực
-                match_score += 0.5  # Cho điểm trung bình
-            elif filter_area and result_area:
-                if filter_area in result_area or result_area in filter_area:
-                    match_score += 1
-                elif any(keyword in result_area for keyword in filter_area.split()):
-                    match_score += 0.7
-        
-        # Lọc theo đặc điểm
-        if filters.get('dac_diem'):
-            total_criteria += 1
-            filter_features = str(filters['dac_diem']).lower().strip()
-            result_desc = str(metadata.get('mo_ta', '')).lower().strip()
-            result_name = str(metadata.get('ten_dia_diem', '')).lower().strip()
+            # Kiểm tra trong các trường có thể chứa khu vực
+            khu_vuc_fields = [
+                metadata.get('khu_vuc', '').lower(),
+                metadata.get('district', '').lower(),
+                metadata.get('area', '').lower(),
+                metadata.get('location', '').lower()
+            ]
             
-            if filter_features and (result_desc or result_name):
-                if any(keyword in result_desc or keyword in result_name 
-                       for keyword in filter_features.split()):
-                    match_score += 1
-        
-        # Lọc theo mức giá (nếu có thông tin)
-        if filters.get('muc_gia'):
-            total_criteria += 1
-            price_level = str(filters['muc_gia']).lower().strip()
-            # Giả sử có thông tin về giá trong metadata
-            result_price_info = str(metadata.get('gia_ve', '')).lower().strip()
-            
-            if price_level and result_price_info and price_level in result_price_info:
+            # Tìm kiếm lỏng hơn
+            if any(target_khu_vuc in field for field in khu_vuc_fields if field):
                 match_score += 1
+                print(f"✓ Khu vực match: {target_khu_vuc} in {khu_vuc_fields}")
+            else:
+                print(f"✗ Khu vực no match: {target_khu_vuc} vs {khu_vuc_fields}")
         
-        # Chỉ thêm kết quả nếu đáp ứng ít nhất 50% tiêu chí
-        if total_criteria > 0 and (match_score / total_criteria) >= 0.5:
-            # Cập nhật điểm similarity dựa trên độ phù hợp với bộ lọc
-            filter_bonus = (match_score / total_criteria) * 0.2
-            result['similarity'] = min(result['similarity'] + filter_bonus, 1.0)
+        # Lọc theo từ khóa (nếu có)
+        if filters.get('tu_khoa'):
+            total_criteria += 1
+            target_keywords = filters['tu_khoa'].lower().split()
+            
+            # Kiểm tra trong tất cả các trường text
+            text_fields = [
+                metadata.get('ten_dia_diem', ''),
+                metadata.get('mo_ta', ''),
+                metadata.get('name', ''),
+                metadata.get('description', ''),
+                metadata.get('title', ''),
+                metadata.get('content', '')
+            ]
+            
+            all_text = ' '.join(text_fields).lower()
+            keyword_matches = sum(1 for keyword in target_keywords if keyword in all_text)
+            
+            # Chỉ cần match ít nhất 1 từ khóa
+            if keyword_matches > 0:
+                match_score += 1
+                print(f"✓ Từ khóa match: {keyword_matches}/{len(target_keywords)} keywords")
+            else:
+                print(f"✗ Từ khóa no match: {target_keywords}")
+        
+        # Lọc theo giá (nếu có)
+        if filters.get('gia'):
+            total_criteria += 1
+            target_gia = filters['gia'].lower()
+            
+            gia_fields = [
+                metadata.get('gia', '').lower(),
+                metadata.get('price', '').lower(),
+                metadata.get('cost', '').lower()
+            ]
+            
+            if any(target_gia in field for field in gia_fields if field):
+                match_score += 1
+                print(f"✓ Giá match: {target_gia}")
+            else:
+                print(f"✗ Giá no match: {target_gia}")
+        
+        # Tính tỷ lệ match
+        if total_criteria > 0:
+            match_ratio = match_score / total_criteria
+            print(f"Match ratio: {match_score}/{total_criteria} = {match_ratio:.2f}")
+            
+            # Lỏng hơn: chỉ cần match ít nhất 50% tiêu chí
+            if match_ratio >= 0.5:
+                filtered_results.append(result)
+                print(f"✓ Accepted: {metadata.get('ten_dia_diem', 'Unknown')}")
+            else:
+                print(f"✗ Rejected: {metadata.get('ten_dia_diem', 'Unknown')}")
+        else:
+            # Nếu không có tiêu chí nào, chấp nhận tất cả
             filtered_results.append(result)
+    
+    print(f"Filtered results count: {len(filtered_results)}")
+    print("=== END DEBUG ===")
     
     return filtered_results
 
@@ -165,89 +212,72 @@ def combined_search_with_filters(question: str, extracted_features: Dict[str, An
         count = collection.count()
         if count == 0:
             return {
-                'status': 'error',
-                'message': 'No data in collection. Please run sync first.',
-                'results': []
+                "success": False,
+                "message": "Không có dữ liệu trong cơ sở dữ liệu",
+                "results": []
             }
         
-        # Chuẩn hóa câu hỏi
-        question = question.strip().lower()
-        question_words = set(question.split())
+        print(f"=== DEBUG: combined_search_with_filters ===")
+        print(f"Question: {question}")
+        print(f"Extracted features: {extracted_features}")
+        print(f"Total documents in collection: {count}")
         
-        # Thực hiện tìm kiếm vector với số lượng kết quả lớn hơn để có nhiều lựa chọn cho bộ lọc
-        search_results = collection.query(
+        # Lấy filters từ extracted_features
+        filters = extracted_features.get('filters', {})
+        
+        # Thực hiện tìm kiếm ngữ nghĩa với câu hỏi gốc
+        print(f"Performing semantic search with question: {question}")
+        semantic_results = collection.query(
             query_texts=[question],
-            n_results=min(n_results * 3, 50),  # Lấy nhiều hơn để lọc
-            include=['documents', 'metadatas', 'distances']
+            n_results=min(n_results * 3, count),  # Lấy nhiều hơn để có thể lọc
+            include=["metadatas", "documents", "distances"]
         )
         
-        # Format kết quả ban đầu
-        formatted_results = []
-        for doc, metadata, distance in zip(search_results['documents'][0], 
-                                         search_results['metadatas'][0], 
-                                         search_results['distances'][0]):
-            similarity_score = calculate_semantic_score(distance, question_words, metadata)
-            
-            # Xử lý an toàn các trường metadata có thể thiếu
-            formatted_results.append({
-                'id': metadata.get('id', ''),
-                'ten_dia_diem': metadata.get('ten_dia_diem', ''),
-                'mo_ta': metadata.get('mo_ta', ''),
-                'loai_dia_diem': metadata.get('loai_dia_diem', ''),
-                'khu_vuc': metadata.get('khu_vuc', ''),
-                'dia_chi': metadata.get('dia_chi', ''),
-                'similarity': round(similarity_score, 2),
-                'metadata': metadata  # Giữ lại metadata để lọc
-            })
+        print(f"Semantic search returned {len(semantic_results['ids'][0])} results")
         
-        # Sắp xếp theo similarity giảm dần
-        formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
-        
-        # Áp dụng bộ lọc nếu có thực thể trích xuất
-        if extracted_features:
-            print("=== ÁP DỤNG BỘ LỌC ===")
-            print("Tiêu chí lọc:", extracted_features)
-            
-            filtered_results = apply_filters_to_results(formatted_results, extracted_features)
-            
-            print(f"Kết quả trước lọc: {len(formatted_results)}")
-            print(f"Kết quả sau lọc: {len(filtered_results)}")
-            print("==========================")
-            
-            # Sắp xếp lại kết quả đã lọc
-            filtered_results.sort(key=lambda x: x['similarity'], reverse=True)
-            
-            # Loại bỏ metadata khỏi kết quả cuối cùng
-            final_results = []
-            for result in filtered_results[:n_results]:
-                final_result = {k: v for k, v in result.items() if k != 'metadata'}
-                final_results.append(final_result)
-            
-            return {
-                'status': 'success',
-                'message': f'Found {len(final_results)} relevant locations after filtering',
-                'results': final_results,
-                'search_method': 'combined_semantic_and_filter'
+        # Chuyển đổi kết quả sang format dễ xử lý
+        results = []
+        for i in range(len(semantic_results['ids'][0])):
+            result = {
+                'id': semantic_results['ids'][0][i],
+                'metadata': semantic_results['metadatas'][0][i],
+                'document': semantic_results['documents'][0][i],
+                'distance': semantic_results['distances'][0][i]
             }
+            results.append(result)
+        
+        print(f"First few results distances: {[r['distance'] for r in results[:5]]}")
+        
+        # Áp dụng bộ lọc nếu có
+        if filters:
+            print(f"Applying filters: {filters}")
+            filtered_results = apply_filters_to_results(results, filters)
+            print(f"After filtering: {len(filtered_results)} results")
         else:
-            # Nếu không có bộ lọc, trả về kết quả tìm kiếm ngữ nghĩa thuần túy
-            final_results = []
-            for result in formatted_results[:n_results]:
-                final_result = {k: v for k, v in result.items() if k != 'metadata'}
-                final_results.append(final_result)
-            
-            return {
-                'status': 'success',
-                'message': f'Found {len(final_results)} relevant locations',
-                'results': final_results,
-                'search_method': 'semantic_only'
-            }
-            
-    except Exception as e:
+            filtered_results = results
+            print("No filters applied")
+        
+        # Sắp xếp theo khoảng cách (gần nhất trước)
+        filtered_results.sort(key=lambda x: x['distance'])
+        
+        # Giới hạn số lượng kết quả
+        final_results = filtered_results[:n_results]
+        
+        print(f"Final results count: {len(final_results)}")
+        
         return {
-            'status': 'error',
-            'message': f'Error during combined search: {str(e)}',
-            'results': []
+            "success": True,
+            "results": final_results,
+            "total_found": len(filtered_results),
+            "filters_applied": bool(filters)
+        }
+        
+    except Exception as e:
+        print(f"Error in combined_search_with_filters: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Lỗi tìm kiếm: {str(e)}",
+            "results": []
         }
 
 def extract_user_intent_and_features(question: str) -> Dict[str, Any]:
@@ -273,212 +303,87 @@ def extract_user_intent_and_features(question: str) -> Dict[str, Any]:
                     "properties": {
                         "loai_dia_diem": {
                             "type": "string",
-                            "description": "Loại hình của địa điểm, ví dụ: 'Bảo tàng', 'Quán cà phê', 'Công viên', 'Chùa', 'Nhà thờ', 'Chợ', 'Địa điểm ăn uống'."
+                            "description": "Loại địa điểm (bảo tàng, công viên, nhà hàng, khách sạn, chợ, v.v.)"
                         },
                         "khu_vuc": {
-                            "type": "string",
-                            "description": "Khu vực hoặc quận/huyện mà người dùng muốn tìm kiếm, ví dụ: 'Quận 1', 'Quận 3', 'Thành phố Thủ Đức'."
+                            "type": "string", 
+                            "description": "Khu vực cụ thể (quận 1, quận 3, Bến Thành, v.v.)"
                         },
-                        "dac_diem": {
+                        "tu_khoa": {
                             "type": "string",
-                            "description": "Các đặc điểm, từ khóa hoặc sở thích cụ thể của người dùng, ví dụ: 'yên tĩnh', 'chụp ảnh', 'cổ kính', 'ngoài trời', 'miễn phí'."
+                            "description": "Từ khóa tìm kiếm (từ tiếng Việt, Anh, Trung, Nhật, Hàn)"
                         },
-                        "muc_gia": {
+                        "gia": {
                             "type": "string",
-                            "description": "Mức giá mong muốn của người dùng.",
-                            "enum": ["Thấp", "Trung bình", "Cao"]
+                            "description": "Mức giá (rẻ, trung bình, cao, miễn phí, v.v.)"
                         }
                     },
                     "required": []
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "hoi_thong_tin_chi_tiet",
-                "description": "Trích xuất thông tin khi người dùng hỏi chi tiết về một địa điểm cụ thể.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "ten_dia_diem": {
-                            "type": "string",
-                            "description": "Tên địa điểm mà người dùng muốn biết thông tin chi tiết."
-                        },
-                        "loai_thong_tin": {
-                            "type": "string",
-                            "description": "Loại thông tin mà người dùng quan tâm.",
-                            "enum": ["Địa chỉ", "Giờ mở cửa", "Giá vé", "Cách đi", "Đánh giá", "Hình ảnh", "Tất cả"]
-                        }
-                    },
-                    "required": ["ten_dia_diem"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lap_lich_trinh",
-                "description": "Trích xuất thông tin khi người dùng muốn lập lịch trình du lịch.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "so_ngay": {
-                            "type": "integer",
-                            "description": "Số ngày du lịch."
-                        },
-                        "so_nguoi": {
-                            "type": "integer",
-                            "description": "Số người trong đoàn."
-                        },
-                        "ngan_sach": {
-                            "type": "string",
-                            "description": "Ngân sách dự kiến.",
-                            "enum": ["Thấp", "Trung bình", "Cao"]
-                        },
-                        "so_thich": {
-                            "type": "string",
-                            "description": "Sở thích hoặc mục đích du lịch, ví dụ: 'văn hóa', 'ẩm thực', 'mua sắm', 'chụp ảnh'."
-                        },
-                        "khu_vuc_uu_tien": {
-                            "type": "string",
-                            "description": "Khu vực ưu tiên cho lịch trình."
-                        }
-                    },
-                    "required": []
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "so_sanh_dia_diem",
-                "description": "Trích xuất thông tin khi người dùng muốn so sánh các địa điểm.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "dia_diem_1": {
-                            "type": "string",
-                            "description": "Tên địa điểm thứ nhất."
-                        },
-                        "dia_diem_2": {
-                            "type": "string",
-                            "description": "Tên địa điểm thứ hai."
-                        },
-                        "tieu_chi_so_sanh": {
-                            "type": "string",
-                            "description": "Tiêu chí so sánh, ví dụ: 'giá vé', 'vị trí', 'độ nổi tiếng', 'phù hợp cho gia đình'."
-                        }
-                    },
-                    "required": ["dia_diem_1", "dia_diem_2"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "gop_y_va_danh_gia",
-                "description": "Trích xuất thông tin khi người dùng muốn góp ý hoặc đánh giá địa điểm.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "ten_dia_diem": {
-                            "type": "string",
-                            "description": "Tên địa điểm được đánh giá."
-                        },
-                        "loai_gop_y": {
-                            "type": "string",
-                            "description": "Loại góp ý hoặc đánh giá.",
-                            "enum": ["Đánh giá tích cực", "Phàn nàn", "Góp ý cải thiện", "Hỏi thông tin"]
-                        },
-                        "noi_dung": {
-                            "type": "string",
-                            "description": "Nội dung góp ý hoặc đánh giá."
-                        }
-                    },
-                    "required": ["ten_dia_diem"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "hoi_chung",
-                "description": "Trích xuất thông tin cho các câu hỏi chung về du lịch TP.HCM.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "chu_de": {
-                            "type": "string",
-                            "description": "Chủ đề của câu hỏi.",
-                            "enum": ["Thời tiết", "Giao thông", "Văn hóa", "Lịch sử", "Ẩm thực", "Mua sắm", "Khác"]
-                        },
-                        "cau_hoi_cu_the": {
-                            "type": "string",
-                            "description": "Câu hỏi cụ thể của người dùng."
-                        }
-                    },
-                    "required": ["cau_hoi_cu_the"]
                 }
             }
         }
     ]
     
+    # System prompt cải tiến để hỗ trợ đa ngôn ngữ
+    system_prompt = """Bạn là trợ lý AI chuyên về du lịch TP.HCM. Hãy phân tích câu hỏi của người dùng và trích xuất thông tin để tìm kiếm địa điểm phù hợp.
+
+Hỗ trợ các ngôn ngữ: Tiếng Việt, Tiếng Anh, Tiếng Trung, Tiếng Nhật, Tiếng Hàn
+
+Từ khóa tiếng Anh phổ biến:
+- Museum, Park, Restaurant, Hotel, Market, Shopping mall, Temple, Church, Coffee shop, Bar, Nightlife, Entertainment
+- District 1, District 3, Ben Thanh, Saigon, Ho Chi Minh City
+- Cheap, Expensive, Free, Budget, Luxury, Food, Cuisine
+
+Từ khóa tiếng Việt phổ biến:
+- Bảo tàng, Công viên, Nhà hàng, Khách sạn, Chợ, Trung tâm thương mại, Chùa, Nhà thờ, Quán cà phê, Bar, Cuộc sống về đêm, Giải trí
+- Quận 1, Quận 3, Bến Thành, Sài Gòn, TP.HCM
+- Rẻ, Đắt, Miễn phí, Bình dân, Cao cấp, Ẩm thực, Món ăn
+
+Hãy trích xuất chính xác các thông tin từ câu hỏi và trả về dưới dạng JSON."""
+
     try:
-        # Gọi OpenAI API để trích xuất thông tin
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {
-                    "role": "system",
-                    "content": """Bạn là một trợ lý AI chuyên phân tích ý định và trích xuất thông tin từ câu hỏi của người dùng về du lịch TP.HCM. 
-                    Hãy phân tích câu hỏi và trích xuất thông tin phù hợp nhất với các schema đã định nghĩa.
-                    Nếu câu hỏi không phù hợp với bất kỳ schema nào, hãy sử dụng schema 'hoi_chung'.
-                    Trả về kết quả bằng tiếng Việt."""
-                },
-                {
-                    "role": "user",
-                    "content": f"Câu hỏi của người dùng: {question}"
-                }
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
             ],
             tools=tools_schema,
-            tool_choice="auto",
-            temperature=0.1
+            tool_choice={"type": "function", "function": {"name": "tim_kiem_dia_diem"}}
         )
         
-        # Xử lý kết quả
-        result = {
-            "status": "success",
-            "original_question": question,
-            "intent": None,
-            "extracted_features": {},
-            "confidence": 0.0
-        }
-        
-        if response.choices[0].message.tool_calls:
-            tool_call = response.choices[0].message.tool_calls[0]
-            result["intent"] = tool_call.function.name
-            result["extracted_features"] = json.loads(tool_call.function.arguments)
-            result["confidence"] = 0.9  # Độ tin cậy cao khi có tool call
-        else:
-            # Nếu không có tool call, phân loại ý định cơ bản
-            result["intent"] = "hoi_chung"
-            result["extracted_features"] = {
-                "chu_de": "Khác",
-                "cau_hoi_cu_the": question
+        # Xử lý response
+        tool_calls = response.choices[0].message.tool_calls
+        if tool_calls:
+            function_call = tool_calls[0]
+            function_args = json.loads(function_call.function.arguments)
+            
+            print(f"=== DEBUG: extract_user_intent_and_features ===")
+            print(f"Question: {question}")
+            print(f"Extracted features: {function_args}")
+            
+            return {
+                "original_question": question,
+                "intent": "tim_kiem_dia_diem",
+                "confidence": 0.9,
+                "extracted_features": function_args
             }
-            result["confidence"] = 0.5
-        
-        return result
-        
+        else:
+            print("No tool calls found in response")
+            return {
+                "original_question": question,
+                "intent": "general_question",
+                "confidence": 0.5,
+                "extracted_features": {}
+            }
+            
     except Exception as e:
+        print(f"Error in extract_user_intent_and_features: {str(e)}")
         return {
-            "status": "error",
             "original_question": question,
-            "intent": "unknown",
-            "extracted_features": {},
+            "intent": "error",
             "confidence": 0.0,
-            "error": str(e)
+            "extracted_features": {}
         }
 
 def get_intent_description(intent_name: str) -> str:
@@ -536,14 +441,15 @@ def format_extraction_result(result: Dict[str, Any]) -> str:
     Returns:
         str: Văn bản đã format
     """
-    if result["status"] == "error":
+    if result.get("intent") == "error":
         return f"Lỗi trích xuất: {result.get('error', 'Không xác định')}"
     
-    intent_desc = get_intent_description(result["intent"])
-    features = result["extracted_features"]
+    intent_desc = get_intent_description(result.get("intent", "unknown"))
+    features = result.get("extracted_features", {})
+    confidence = result.get("confidence", 0.0)
     
     formatted_text = f"Ý định: {intent_desc}\n"
-    formatted_text += f"Độ tin cậy: {result['confidence']:.1%}\n"
+    formatted_text += f"Độ tin cậy: {confidence:.1%}\n"
     formatted_text += "Thông tin trích xuất:\n"
     
     for key, value in features.items():
@@ -562,7 +468,82 @@ def detect_language(text: str) -> Dict[str, Any]:
         Dict[str, Any]: Kết quả nhận biết ngôn ngữ
     """
     try:
-        # Gọi OpenAI API để nhận biết ngôn ngữ
+        # Fallback detection bằng từ khóa trước khi gọi API
+        text_lower = text.lower().strip()
+        
+        # Từ khóa tiếng Anh phổ biến
+        english_keywords = [
+            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
+            'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
+            'what', 'where', 'when', 'why', 'how', 'which', 'who', 'whom',
+            'museum', 'park', 'restaurant', 'hotel', 'shopping', 'tourist', 'visit', 'see',
+            'food', 'culture', 'history', 'architecture', 'beautiful', 'famous', 'popular'
+        ]
+        
+        # Từ khóa tiếng Trung phổ biến
+        chinese_keywords = ['的', '是', '在', '有', '和', '与', '或', '但', '因为', '所以', '如果', '虽然']
+        
+        # Từ khóa tiếng Hàn phổ biến
+        korean_keywords = ['은', '는', '이', '가', '을', '를', '의', '에', '에서', '로', '으로', '와', '과']
+        
+        # Từ khóa tiếng Nhật phổ biến
+        japanese_keywords = ['は', 'が', 'を', 'に', 'へ', 'で', 'から', 'まで', 'の', 'と', 'や', 'も']
+        
+        # Từ khóa tiếng Việt phổ biến
+        vietnamese_keywords = [
+            'của', 'và', 'hoặc', 'nhưng', 'trong', 'trên', 'dưới', 'đến', 'cho', 'về', 'với', 'bởi',
+            'là', 'có', 'được', 'bị', 'phải', 'cần', 'muốn', 'thích', 'ghét',
+            'gì', 'đâu', 'khi', 'tại sao', 'như thế nào', 'nào', 'ai', 'của ai',
+            'bảo tàng', 'công viên', 'nhà hàng', 'khách sạn', 'mua sắm', 'du lịch', 'thăm', 'xem',
+            'ẩm thực', 'văn hóa', 'lịch sử', 'kiến trúc', 'đẹp', 'nổi tiếng', 'phổ biến'
+        ]
+        
+        # Đếm từ khóa cho mỗi ngôn ngữ
+        english_count = sum(1 for word in text_lower.split() if word in english_keywords)
+        chinese_count = sum(1 for char in text_lower if char in chinese_keywords)
+        korean_count = sum(1 for char in text_lower if char in korean_keywords)
+        japanese_count = sum(1 for char in text_lower if char in japanese_keywords)
+        vietnamese_count = sum(1 for word in text_lower.split() if word in vietnamese_keywords)
+        
+        # Nếu có đủ từ khóa để xác định ngôn ngữ
+        if english_count >= 2 and english_count > max(chinese_count, korean_count, japanese_count, vietnamese_count):
+            return {
+                "language": "english",
+                "confidence": 0.8,
+                "is_supported": True,
+                "detection_method": "keyword_fallback"
+            }
+        elif chinese_count >= 2:
+            return {
+                "language": "chinese",
+                "confidence": 0.8,
+                "is_supported": True,
+                "detection_method": "keyword_fallback"
+            }
+        elif korean_count >= 2:
+            return {
+                "language": "korean",
+                "confidence": 0.8,
+                "is_supported": True,
+                "detection_method": "keyword_fallback"
+            }
+        elif japanese_count >= 2:
+            return {
+                "language": "japanese",
+                "confidence": 0.8,
+                "is_supported": True,
+                "detection_method": "keyword_fallback"
+            }
+        elif vietnamese_count >= 2:
+            return {
+                "language": "vietnamese",
+                "confidence": 0.8,
+                "is_supported": True,
+                "detection_method": "keyword_fallback"
+            }
+        
+        # Nếu không xác định được bằng từ khóa, gọi OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -603,6 +584,7 @@ def detect_language(text: str) -> Dict[str, Any]:
         result.setdefault("language", "unknown")
         result.setdefault("confidence", 0.0)
         result.setdefault("is_supported", False)
+        result.setdefault("detection_method", "openai_api")
         
         # Chuẩn hóa tên ngôn ngữ về lowercase
         if result["language"]:
@@ -611,12 +593,32 @@ def detect_language(text: str) -> Dict[str, Any]:
         return result
         
     except Exception as e:
-        return {
-            "language": "unknown",
-            "confidence": 0.0,
-            "is_supported": False,
-            "error": str(e)
-        }
+        # Fallback cuối cùng - giả sử là tiếng Việt nếu có dấu tiếng Việt
+        vietnamese_chars = ['à', 'á', 'ạ', 'ả', 'ã', 'â', 'ầ', 'ấ', 'ậ', 'ẩ', 'ẫ', 'ă', 'ằ', 'ắ', 'ặ', 'ẳ', 'ẵ',
+                           'è', 'é', 'ẹ', 'ẻ', 'ẽ', 'ê', 'ề', 'ế', 'ệ', 'ể', 'ễ',
+                           'ì', 'í', 'ị', 'ỉ', 'ĩ',
+                           'ò', 'ó', 'ọ', 'ỏ', 'õ', 'ô', 'ồ', 'ố', 'ộ', 'ổ', 'ỗ', 'ơ', 'ờ', 'ớ', 'ợ', 'ở', 'ỡ',
+                           'ù', 'ú', 'ụ', 'ủ', 'ũ', 'ư', 'ừ', 'ứ', 'ự', 'ử', 'ữ',
+                           'ỳ', 'ý', 'ỵ', 'ỷ', 'ỹ',
+                           'đ']
+        
+        has_vietnamese = any(char in text.lower() for char in vietnamese_chars)
+        
+        if has_vietnamese:
+            return {
+                "language": "vietnamese",
+                "confidence": 0.6,
+                "is_supported": True,
+                "detection_method": "vietnamese_chars_fallback"
+            }
+        else:
+            # Nếu không có dấu tiếng Việt, giả sử là tiếng Anh
+            return {
+                "language": "english",
+                "confidence": 0.5,
+                "is_supported": True,
+                "detection_method": "default_fallback"
+            }
 
 def get_language_info(language: str) -> Dict[str, str]:
     """
@@ -682,6 +684,9 @@ def generate_natural_response(question: str, search_results: List[Dict],
         print(f"=== DEBUG: generate_natural_response ===")
         print(f"Input language: '{language}'")
         print(f"Language type: {type(language)}")
+        print(f"Search results count: {len(search_results)}")
+        print(f"Search results type: {type(search_results)}")
+        print(f"Extracted features: {extracted_features}")
         
         # Chuẩn hóa ngôn ngữ về lowercase
         language = language.lower().strip()
@@ -842,7 +847,7 @@ def generate_natural_response(question: str, search_results: List[Dict],
         
         print(f"Selected language branch: '{language}'")
         print(f"System prompt language instruction: {'Vietnamese' if language == 'vietnamese' else 'Other'}")
-        print("=== END DEBUG ===")
+        print("About to call OpenAI API...")
         
         # Gọi OpenAI API
         response = openai.ChatCompletion.create(
@@ -855,7 +860,9 @@ def generate_natural_response(question: str, search_results: List[Dict],
             max_tokens=500
         )
         
+        print("OpenAI API call successful")
         natural_response = response.choices[0].message.content
+        print(f"Generated response length: {len(natural_response)}")
         
         return {
             "status": "success",
@@ -866,6 +873,9 @@ def generate_natural_response(question: str, search_results: List[Dict],
         }
         
     except Exception as e:
+        print(f"ERROR in generate_natural_response: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             "status": "error",
             "response": f"Xin lỗi, có lỗi khi tạo câu trả lời: {str(e)}",

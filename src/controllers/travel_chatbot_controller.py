@@ -17,6 +17,7 @@ import json
 import math
 import openai
 from datetime import datetime
+import traceback
 
 # Khởi tạo namespace
 travel_chatbot_ns = Namespace('travel-chatbot', description='Travel chatbot operations')
@@ -40,7 +41,8 @@ answer_model = travel_chatbot_ns.model('Answer', {
     'loai_dia_diem': fields.String(description='Location type'),
     'khu_vuc': fields.String(description='Area/Region'),
     'dia_chi': fields.String(description='Address'),
-    'similarity': fields.Float(description='Similarity score (0-1)')
+    'similarity': fields.Float(description='Similarity score (0-1)'),
+    'language': fields.String(description='Language of the result (vietnamese, english, chinese, korean, japanese)')
 })
 
 search_response_model = travel_chatbot_ns.model('SearchResponse', {
@@ -251,11 +253,11 @@ class SearchLocation(Resource):
             extraction_result = extract_user_intent_and_features(question)
             
             # In ra kết quả trích xuất
-            print("Câu hỏi gốc:", extraction_result['original_question'])
-            print("Ý định:", extraction_result['intent'])
-            print("Độ tin cậy:", f"{extraction_result['confidence']:.1%}")
+            print("Câu hỏi gốc:", extraction_result.get('original_question', question))
+            print("Ý định:", extraction_result.get('intent', 'unknown'))
+            print("Độ tin cậy:", f"{extraction_result.get('confidence', 0):.1%}")
             print("Thực thể trích xuất:")
-            for key, value in extraction_result['extracted_features'].items():
+            for key, value in extraction_result.get('extracted_features', {}).items():
                 print(f"  - {key}: {value}")
             print("==========================")
             
@@ -269,22 +271,30 @@ class SearchLocation(Resource):
             print("=== THỰC HIỆN TÌM KIẾM KẾT HỢP ===")
             search_result = combined_search_with_filters(
                 question=question,
-                extracted_features=extraction_result['extracted_features'],
+                extracted_features=extraction_result.get('extracted_features', {}),
                 n_results=8
             )
             
+            # Debug: Kiểm tra kết quả tìm kiếm ngay sau khi nhận
+            print("=== DEBUG: search_result received ===")
+            print(f"search_result type: {type(search_result)}")
+            print(f"search_result keys: {list(search_result.keys()) if isinstance(search_result, dict) else 'Not a dict'}")
+            print(f"search_result['status']: {search_result.get('status', 'No status key')}")
+            print(f"search_result['success']: {search_result.get('success', 'No success key')}")
+            print("=== END DEBUG ===")
+            
             # Kiểm tra kết quả tìm kiếm
-            if search_result['status'] == 'error':
+            if search_result.get('status') == 'error' or search_result.get('success') == False:
                 return {
                     'status': 'error',
-                    'message': search_result['message'],
-                    'response': f"Xin lỗi, {search_result['message']}",
+                    'message': search_result.get('message', 'Unknown search error'),
+                    'response': f"Xin lỗi, {search_result.get('message', 'Unknown search error')}",
                     'language': detected_language,
                     'language_name': lang_info['name'],
                     'search_results': [],
                     'suggested_activities': [],
                     'follow_up_questions': [],
-                    'extracted_features': extraction_result['extracted_features']
+                    'extracted_features': extraction_result.get('extracted_features', {})
                 }, 500
             
             # In thông tin về phương pháp tìm kiếm
@@ -292,19 +302,105 @@ class SearchLocation(Resource):
             print(f"Số kết quả tìm thấy: {len(search_result['results'])}")
             print("==========================")
             
+            # Format kết quả tìm kiếm để phù hợp với response model
+            formatted_results = []
+            for result in search_result['results']:
+                metadata = result.get('metadata', {})
+                distance = result.get('distance', 0)
+                
+                # Tính similarity score từ distance
+                similarity = 1 / (1 + distance) if distance > 0 else 0
+                
+                # Xác định ngôn ngữ của kết quả dựa trên metadata
+                result_language = 'unknown'
+                if metadata.get('mo_ta'):
+                    mo_ta = metadata.get('mo_ta', '')
+                    # Kiểm tra ngôn ngữ dựa trên ký tự
+                    if any(char in mo_ta for char in ['は', 'が', 'を', 'に', 'へ', 'で', 'から', 'まで', 'の', 'と', 'や', 'も']):
+                        result_language = 'japanese'
+                    elif any(char in mo_ta for char in ['은', '는', '이', '가', '을', '를', '의', '에', '에서', '로', '으로', '와', '과']):
+                        result_language = 'korean'
+                    elif any(char in mo_ta for char in ['的', '是', '在', '有', '和', '与', '或', '但', '因为', '所以', '如果', '虽然']):
+                        result_language = 'chinese'
+                    elif any(char in mo_ta for char in ['à', 'á', 'ạ', 'ả', 'ã', 'â', 'ầ', 'ấ', 'ậ', 'ẩ', 'ẫ', 'ă', 'ằ', 'ắ', 'ặ', 'ẳ', 'ẵ', 'è', 'é', 'ẹ', 'ẻ', 'ẽ', 'ê', 'ề', 'ế', 'ệ', 'ể', 'ễ', 'ì', 'í', 'ị', 'ỉ', 'ĩ', 'ò', 'ó', 'ọ', 'ỏ', 'õ', 'ô', 'ồ', 'ố', 'ộ', 'ổ', 'ỗ', 'ơ', 'ờ', 'ớ', 'ợ', 'ở', 'ỡ', 'ù', 'ú', 'ụ', 'ủ', 'ũ', 'ư', 'ừ', 'ứ', 'ự', 'ử', 'ữ', 'ỳ', 'ý', 'ỵ', 'ỷ', 'ỹ', 'đ']):
+                        result_language = 'vietnamese'
+                    else:
+                        result_language = 'english'
+                
+                # Ưu tiên kết quả cùng ngôn ngữ với câu hỏi
+                language_boost = 0.3 if result_language == detected_language else 0.0
+                adjusted_similarity = min(similarity + language_boost, 1.0)
+                
+                formatted_result = {
+                    'id': result.get('id', ''),
+                    'ten_dia_diem': metadata.get('ten_dia_diem', ''),
+                    'mo_ta': metadata.get('mo_ta', ''),
+                    'loai_dia_diem': metadata.get('loai_dia_diem', ''),
+                    'khu_vuc': metadata.get('khu_vuc', ''),
+                    'dia_chi': metadata.get('dia_chi', ''),
+                    'similarity': round(adjusted_similarity, 3),
+                    'language': result_language
+                }
+                formatted_results.append(formatted_result)
+            
+            # Sắp xếp kết quả theo similarity (cao nhất trước) và ưu tiên ngôn ngữ
+            formatted_results.sort(key=lambda x: (x['similarity'], x['language'] == detected_language), reverse=True)
+            
+            # Chỉ giữ lại kết quả có similarity > 0.1 để tránh kết quả không liên quan
+            formatted_results = [r for r in formatted_results if r['similarity'] > 0.1]
+            
+            # Ưu tiên kết quả cùng ngôn ngữ với câu hỏi
+            same_language_results = [r for r in formatted_results if r['language'] == detected_language]
+            other_language_results = [r for r in formatted_results if r['language'] != detected_language]
+            
+            # Nếu có đủ kết quả cùng ngôn ngữ, chỉ trả về những kết quả đó
+            if len(same_language_results) >= 3:
+                formatted_results = same_language_results[:8]
+                print(f"Using {len(formatted_results)} results in {detected_language}")
+            else:
+                # Nếu không đủ, bổ sung thêm kết quả từ ngôn ngữ khác
+                formatted_results = same_language_results + other_language_results[:8-len(same_language_results)]
+                print(f"Using {len(same_language_results)} same language + {len(other_language_results[:8-len(same_language_results)])} other language results")
+            
+            # Debug: Kiểm tra cấu trúc search_result
+            print("=== DEBUG: search_result structure ===")
+            print(f"search_result keys: {list(search_result.keys())}")
+            print(f"search_result['status']: {search_result.get('status')}")
+            print(f"search_result['results'] type: {type(search_result.get('results'))}")
+            print(f"search_result['results'] length: {len(search_result.get('results', []))}")
+            if search_result.get('results'):
+                print(f"First result keys: {list(search_result['results'][0].keys())}")
+                print(f"First result metadata keys: {list(search_result['results'][0].get('metadata', {}).keys())}")
+            print("=== END DEBUG ===")
+            
             # Bước 4: Tạo câu trả lời tự nhiên cho chatbot
             print("=== SINH CÂU TRẢ LỜI TỰ NHIÊN ===")
-            chatbot_response = create_chatbot_response(
-                question=question,
-                search_results=search_result['results'],
-                extracted_features=extraction_result['extracted_features'],
-                language=detected_language
-            )
-            
-            print("Câu trả lời chatbot đã được tạo")
-            print("Độ dài câu trả lời:", len(chatbot_response.get('response', '')))
-            print("Số hoạt động gợi ý:", len(chatbot_response.get('suggested_activities', [])))
-            print("Số câu hỏi tiếp theo:", len(chatbot_response.get('follow_up_questions', [])))
+            try:
+                print("About to call create_chatbot_response...")
+                print(f"Question: {question}")
+                print(f"Search results count: {len(formatted_results)}")
+                print(f"Extracted features: {extraction_result.get('extracted_features', {})}")
+                print(f"Language: {detected_language}")
+                
+                chatbot_response = create_chatbot_response(
+                    question=question,
+                    search_results=formatted_results,
+                    extracted_features=extraction_result.get('extracted_features', {}),
+                    language=detected_language
+                )
+                
+                print("create_chatbot_response completed successfully")
+                print("Câu trả lời chatbot đã được tạo")
+                print("Độ dài câu trả lời:", len(chatbot_response.get('response', '')))
+                print("Số hoạt động gợi ý:", len(chatbot_response.get('suggested_activities', [])))
+                print("Số câu hỏi tiếp theo:", len(chatbot_response.get('follow_up_questions', [])))
+                
+            except Exception as e:
+                print(f"ERROR in create_chatbot_response: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise e
+                
             print("==========================")
             
             # Trả về kết quả hoàn chỉnh
@@ -314,10 +410,10 @@ class SearchLocation(Resource):
                 'response': chatbot_response.get('response', ''),
                 'language': detected_language,
                 'language_name': lang_info['name'],
-                'search_results': search_result['results'],
+                'search_results': formatted_results,
                 'suggested_activities': chatbot_response.get('suggested_activities', []),
                 'follow_up_questions': chatbot_response.get('follow_up_questions', []),
-                'extracted_features': extraction_result['extracted_features']
+                'extracted_features': extraction_result.get('extracted_features', {})
             }
             
         except Exception as e:
