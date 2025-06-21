@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 def is_travel_related_question(question: str) -> bool:
     """
     Kiểm tra xem câu hỏi có liên quan đến du lịch hay không
+    Hỗ trợ 5 ngôn ngữ: Tiếng Việt, Trung, Anh, Hàn, Nhật
     
     Args:
         question (str): Câu hỏi của người dùng
@@ -26,34 +27,133 @@ def is_travel_related_question(question: str) -> bool:
     # Chuyển về chữ thường để dễ so sánh
     question_lower = question.lower()
     
-    # Từ khóa liên quan đến du lịch
+    # Từ khóa liên quan đến du lịch - 5 ngôn ngữ
     travel_keywords = [
+        # === TIẾNG VIỆT ===
         # Địa điểm du lịch
-        'địa điểm', 'địa danh', 'nơi', 'chỗ', 'khu vực', 'quận', 'huyện', 'phường',
-        'place', 'location', 'area', 'district', 'ward', 'attraction', 'destination',
-        '景点', '地方', '区域', '地区', '場所', 'エリア', '지역', '장소',
+        'địa điểm', 'địa danh', 'nơi', 'chỗ', 'khu vực', 'quận', 'huyện', 'phường', 'thành phố', 'tỉnh',
+        'điểm đến', 'điểm tham quan', 'danh lam thắng cảnh', 'di tích', 'di tích lịch sử',
         
         # Hoạt động du lịch
-        'du lịch', 'thăm quan', 'khám phá', 'đi chơi', 'nghỉ dưỡng', 'ăn uống',
-        'travel', 'visit', 'explore', 'tour', 'vacation', 'restaurant', 'food',
-        '旅游', '参观', '探索', '游玩', '度假', '餐厅', '美食',
-        '旅行', '観光', '探索', '遊び', '休暇', 'レストラン', '料理',
-        '여행', '관광', '탐험', '놀기', '휴가', '레스토랑', '음식',
+        'du lịch', 'thăm quan', 'khám phá', 'đi chơi', 'nghỉ dưỡng', 'ăn uống', 'thưởng thức',
+        'đi dạo', 'dạo chơi', 'thư giãn', 'giải trí', 'vui chơi', 'trải nghiệm',
         
         # Loại địa điểm
-        'nhà hàng', 'khách sạn', 'cafe', 'quán ăn', 'chợ', 'trung tâm thương mại',
-        'restaurant', 'hotel', 'cafe', 'market', 'mall', 'shopping center',
-        '餐厅', '酒店', '咖啡', '市场', '购物中心',
-        'レストラン', 'ホテル', 'カフェ', '市場', 'ショッピングセンター',
-        '레스토랑', '호텔', '카페', '시장', '쇼핑센터',
+        'nhà hàng', 'khách sạn', 'cafe', 'quán ăn', 'chợ', 'trung tâm thương mại', 'siêu thị',
+        'quán bar', 'pub', 'club', 'vũ trường', 'karaoke', 'massage', 'spa',
+        'bảo tàng', 'thư viện', 'rạp chiếu phim', 'công viên', 'vườn hoa', 'hồ bơi',
+        'sân golf', 'sân tennis', 'phòng gym', 'yoga', 'thiền',
         
         # Địa danh cụ thể ở HCM
-        'bến thành', 'landmark', 'bùi viện', 'nguyễn huệ', 'đồng khởi',
-        'ben thanh', 'landmark 81', 'bui vien', 'nguyen hue', 'dong khoi',
+        'bến thành', 'landmark', 'bùi viện', 'nguyễn huệ', 'đồng khởi', 'phố đi bộ',
+        'ben thanh', 'landmark 81', 'bui vien', 'nguyen hue', 'dong khoi', 'walking street',
+        'chợ bến thành', 'nhà thờ đức bà', 'dinh độc lập', 'bảo tàng chứng tích chiến tranh',
+        'phố tây', 'phố nguyễn huệ', 'phố đồng khởi', 'phố bùi viện',
         
         # Từ khóa tìm kiếm
-        'ở đâu', 'đi đâu', 'tìm', 'kiếm', 'where', 'find', 'search',
-        '哪里', '找', '搜索', 'どこ', '探す', '검색', '찾다'
+        'ở đâu', 'đi đâu', 'tìm', 'kiếm', 'tìm kiếm', 'hỏi', 'thắc mắc',
+        'gợi ý', 'đề xuất', 'khuyên', 'tư vấn', 'hướng dẫn', 'chỉ đường',
+        
+        # === TIẾNG ANH ===
+        # Places and locations
+        'place', 'location', 'area', 'district', 'ward', 'attraction', 'destination', 'spot',
+        'venue', 'site', 'landmark', 'monument', 'heritage', 'cultural site',
+        
+        # Travel activities
+        'travel', 'visit', 'explore', 'tour', 'vacation', 'holiday', 'trip', 'journey',
+        'sightseeing', 'adventure', 'experience', 'discover', 'wander', 'roam',
+        
+        # Types of places
+        'restaurant', 'hotel', 'cafe', 'market', 'mall', 'shopping center', 'supermarket',
+        'bar', 'pub', 'club', 'disco', 'karaoke', 'massage', 'spa',
+        'museum', 'library', 'cinema', 'theater', 'park', 'garden', 'pool',
+        'golf course', 'tennis court', 'gym', 'yoga', 'meditation',
+        
+        # Search keywords
+        'where', 'find', 'search', 'look for', 'seek', 'ask', 'question',
+        'suggest', 'recommend', 'advise', 'consult', 'guide', 'direct',
+        
+        # === TIẾNG TRUNG ===
+        # 地点和位置
+        '景点', '地方', '区域', '地区', '场所', '地点', '位置', '地址',
+        '名胜古迹', '文化遗产', '历史遗迹', '地标', '标志性建筑',
+        
+        # 旅游活动
+        '旅游', '参观', '探索', '游玩', '度假', '旅行', '观光', '游览',
+        '体验', '发现', '漫步', '闲逛', '放松', '娱乐', '享受',
+        
+        # 场所类型
+        '餐厅', '酒店', '咖啡', '市场', '购物中心', '超市',
+        '酒吧', '夜总会', '卡拉ok', '按摩', '水疗',
+        '博物馆', '图书馆', '电影院', '剧院', '公园', '花园', '游泳池',
+        '高尔夫球场', '网球场', '健身房', '瑜伽', '冥想',
+        
+        # 搜索关键词
+        '哪里', '找', '搜索', '寻找', '询问', '问题',
+        '推荐', '建议', '咨询', '指导', '指引',
+        
+        # === TIẾNG NHẬT ===
+        # 場所と位置
+        '場所', 'エリア', '地域', '地区', 'スポット', '観光地', '名所',
+        '名勝', '文化遺産', '史跡', 'ランドマーク', '記念碑',
+        
+        # 旅行活動
+        '旅行', '観光', '探索', '遊び', '休暇', 'ツアー', '見学',
+        '体験', '発見', '散歩', 'ぶらぶら', 'リラックス', '楽しみ',
+        
+        # 場所の種類
+        'レストラン', 'ホテル', 'カフェ', '市場', 'ショッピングセンター', 'スーパー',
+        'バー', 'クラブ', 'カラオケ', 'マッサージ', 'スパ',
+        '博物館', '図書館', '映画館', '劇場', '公園', '庭園', 'プール',
+        'ゴルフ場', 'テニスコート', 'ジム', 'ヨガ', '瞑想',
+        
+        # 検索キーワード
+        'どこ', '探す', '検索', '見つける', '質問', '問題',
+        'おすすめ', '提案', '相談', '案内', '指導',
+        
+        # === TIẾNG HÀN ===
+        # 장소와 위치
+        '장소', '지역', '구역', '지점', '관광지', '명소', '명승지',
+        '문화유산', '사적', '랜드마크', '기념비', '유적지',
+        
+        # 여행 활동
+        '여행', '관광', '탐험', '놀기', '휴가', '투어', '견학',
+        '체험', '발견', '산책', '어슬렁거리기', '휴식', '즐기기',
+        
+        # 장소 유형
+        '레스토랑', '호텔', '카페', '시장', '쇼핑센터', '슈퍼마켓',
+        '바', '클럽', '노래방', '마사지', '스파',
+        '박물관', '도서관', '영화관', '극장', '공원', '정원', '수영장',
+        '골프장', '테니스장', '헬스장', '요가', '명상',
+        
+        # 검색 키워드
+        '어디', '찾다', '검색', '찾기', '질문', '문제',
+        '추천', '제안', '상담', '안내', '가이드',
+        
+        # === TỪ KHÓA CHUNG CHO TẤT CẢ NGÔN NGỮ ===
+        # Thời gian và kế hoạch
+        'time', 'schedule', 'plan', 'when', 'how long', 'duration',
+        '时间', '日程', '计划', '什么时候', '多长时间',
+        '時間', 'スケジュール', '計画', 'いつ', 'どのくらい',
+        '시간', '일정', '계획', '언제', '얼마나',
+        
+        # Giao thông và di chuyển
+        'transport', 'transportation', 'bus', 'subway', 'taxi', 'train', 'plane',
+        '交通', '运输', '公交车', '地铁', '出租车', '火车', '飞机',
+        '交通', '輸送', 'バス', '地下鉄', 'タクシー', '電車', '飛行機',
+        '교통', '운송', '버스', '지하철', '택시', '기차', '비행기',
+        
+        # Đặc điểm và mô tả
+        'beautiful', 'nice', 'good', 'bad', 'clean', 'dirty', 'big', 'small',
+        '美丽', '好', '坏', '干净', '脏', '大', '小',
+        '美しい', '良い', '悪い', 'きれい', '汚い', '大きい', '小さい',
+        '아름다운', '좋은', '나쁜', '깨끗한', '더러운', '큰', '작은',
+        
+        # Cảm xúc và đánh giá
+        'like', 'dislike', 'enjoy', 'hate', 'love', 'recommend',
+        '喜欢', '不喜欢', '享受', '讨厌', '爱', '推荐',
+        '好き', '嫌い', '楽しむ', '憎む', '愛する', 'おすすめ',
+        '좋아하다', '싫어하다', '즐기다', '미워하다', '사랑하다', '추천하다'
     ]
     
     # Kiểm tra xem có từ khóa du lịch nào trong câu hỏi không
@@ -61,15 +161,66 @@ def is_travel_related_question(question: str) -> bool:
         if keyword in question_lower:
             return True
     
-    # Kiểm tra các pattern đặc biệt
+    # Kiểm tra các pattern đặc biệt cho từng ngôn ngữ
     travel_patterns = [
-        r'\b(địa điểm|nơi|chỗ)\s+(nào|đẹp|ngon|vui|thú vị)',
-        r'\b(restaurant|hotel|cafe|market|mall)\b',
-        r'\b(đi|đến|thăm|khám phá)\s+',
-        r'\b(where|visit|travel|tour)\b',
-        r'\b(餐厅|酒店|咖啡|市场|购物)\b',
-        r'\b(レストラン|ホテル|カフェ|市場|ショッピング)\b',
-        r'\b(레스토랑|호텔|카페|시장|쇼핑)\b'
+        # === TIẾNG VIỆT ===
+        r'\b(địa điểm|nơi|chỗ)\s+(nào|đẹp|ngon|vui|thú vị|tốt|hay)',
+        r'\b(đi|đến|thăm|khám phá|ghé|dừng)\s+',
+        r'\b(ở đâu|đi đâu|tìm|kiếm|hỏi)\s+',
+        r'\b(gợi ý|đề xuất|khuyên|tư vấn)\s+',
+        r'\b(nhà hàng|khách sạn|cafe|quán|chợ|trung tâm)\s+(nào|đẹp|ngon|tốt)',
+        r'\b(du lịch|thăm quan|nghỉ dưỡng)\s+(ở|tại|đến)',
+        
+        # === TIẾNG ANH ===
+        r'\b(where|what|which|how|when|why)\s+(is|are|can|should|do|does)',
+        r'\b(place|location|area|spot)\s+(to|for|near|around)',
+        r'\b(restaurant|hotel|cafe|market|mall)\s+(near|around|in|at)',
+        r'\b(travel|visit|explore|tour)\s+(to|around|in|at)',
+        r'\b(suggest|recommend|advise)\s+(a|some|good|best)',
+        r'\b(find|look for|search)\s+(a|some|good|best)',
+        
+        # === TIẾNG TRUNG ===
+        r'\b(哪里|什么地方|哪个|怎么|什么时候|为什么)\s+(有|是|可以|应该)',
+        r'\b(景点|地方|区域|地点)\s+(有|是|可以|应该)',
+        r'\b(餐厅|酒店|咖啡|市场|购物中心)\s+(有|是|可以|应该)',
+        r'\b(旅游|参观|探索|游玩)\s+(在|到|去)',
+        r'\b(推荐|建议|咨询)\s+(什么|哪个|哪里)',
+        r'\b(找|搜索|寻找)\s+(什么|哪个|哪里)',
+        
+        # === TIẾNG NHẬT ===
+        r'\b(どこ|何|どの|どう|いつ|なぜ)\s+(に|で|が|を|は)',
+        r'\b(場所|エリア|地域|スポット)\s+(に|で|が|を|は)',
+        r'\b(レストラン|ホテル|カフェ|市場|ショッピングセンター)\s+(に|で|が|を|は)',
+        r'\b(旅行|観光|探索|遊び)\s+(に|で|が|を|は)',
+        r'\b(おすすめ|提案|相談)\s+(は|が|を|に)',
+        r'\b(探す|検索|見つける)\s+(は|が|を|に)',
+        
+        # === TIẾNG HÀN ===
+        r'\b(어디|무엇|어떤|어떻게|언제|왜)\s+(에|에서|가|을|를|는)',
+        r'\b(장소|지역|구역|스팟)\s+(에|에서|가|을|를|는)',
+        r'\b(레스토랑|호텔|카페|시장|쇼핑센터)\s+(에|에서|가|을|를|는)',
+        r'\b(여행|관광|탐험|놀기)\s+(에|에서|가|을|를|는)',
+        r'\b(추천|제안|상담)\s+(해주|해주세요|해주시)',
+        r'\b(찾다|검색|찾기)\s+(해주|해주세요|해주시)',
+        
+        # === PATTERN CHUNG CHO TẤT CẢ NGÔN NGỮ ===
+        # Câu hỏi với từ nghi vấn
+        r'\b(where|what|which|how|when|why|where is|what is|how to)\b',
+        r'\b(哪里|什么|哪个|怎么|什么时候|为什么|哪里是|什么是|怎么)\b',
+        r'\b(どこ|何|どの|どう|いつ|なぜ|どこに|何が|どうやって)\b',
+        r'\b(어디|무엇|어떤|어떻게|언제|왜|어디에|무엇이|어떻게)\b',
+        
+        # Pattern tìm kiếm và gợi ý
+        r'\b(suggest|recommend|advise|find|look for|search)\b',
+        r'\b(推荐|建议|咨询|找|搜索|寻找)\b',
+        r'\b(おすすめ|提案|相談|探す|検索|見つける)\b',
+        r'\b(추천|제안|상담|찾다|검색|찾기)\b',
+        
+        # Pattern địa điểm và hoạt động
+        r'\b(restaurant|hotel|cafe|market|mall|park|museum|tourist|attraction)\b',
+        r'\b(餐厅|酒店|咖啡|市场|购物中心|公园|博物馆|旅游|景点)\b',
+        r'\b(レストラン|ホテル|カフェ|市場|ショッングセンター|公園|博物館|観光|名所)\b',
+        r'\b(레스토랑|호텔|카페|시장|쇼핑센터|공원|박물관|관광|명소)\b'
     ]
     
     for pattern in travel_patterns:
