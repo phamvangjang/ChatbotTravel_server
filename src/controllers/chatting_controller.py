@@ -1,7 +1,7 @@
 from flask_restx import Resource, fields, Namespace, reqparse
 from werkzeug.datastructures import FileStorage
 from flask import request
-from src.services.chatting_service import create_conversation, get_user_conversations, get_conversation_messages, save_message, end_conversation
+from src.services.chatting_service import create_conversation, get_user_conversations, get_conversation_messages, save_message, end_conversation, save_message_update
 from src.services.ai.speech_service import SpeechService
 from werkzeug.utils import secure_filename
 import os
@@ -43,6 +43,15 @@ message_create_model = chatting_ns.model('MessageCreate', {
     'voice_url': fields.String(description='URL of the voice message if any')
 })
 
+message_update_create_model = chatting_ns.model('MessageUpdateCreate', {
+    'conversation_id': fields.Integer(required=True, description='ID of the conversation'),
+    'sender': fields.String(required=True, description='Sender of the message (bot or user)'),
+    'message_text': fields.String(required=True, description='Content of the message'),
+    'translated_text': fields.String(description='Translated text of the message'),
+    'message_type': fields.String(description='Type of the message', default='text'),
+    'voice_url': fields.String(description='URL of the voice message if any')
+})
+
 voice_message_parser = reqparse.RequestParser()
 voice_message_parser.add_argument('conversation_id', type=int, required=True, help='ID of the conversation')
 voice_message_parser.add_argument('sender', type=str, required=True, help='Sender of the message (must be user)')
@@ -74,6 +83,16 @@ message_save_response = chatting_ns.model('MessageSaveResponse', {
     'data': fields.Nested(chatting_ns.model('MessageData', {
         'user_message': fields.Nested(user_message_model),
         'bot_message': fields.Nested(bot_message_model),
+    }))
+})
+
+message_save_update_response = chatting_ns.model('MessageSaveUpdateResponse', {
+    'status': fields.String(description='Status of the response'),
+    'message': fields.String(description='Response message'),
+    'data': fields.Nested(chatting_ns.model('MessageData', {
+        'user_message': fields.Nested(user_message_model),
+        'bot_message': fields.Nested(bot_message_model),
+        'travel_data': fields.Raw(description='Travel chatbot data if applicable')
     }))
 })
 
@@ -200,6 +219,42 @@ class MessageResource(Resource):
             return {'message': 'Missing required fields'}, 400
             
         success, result = save_message(
+            conversation_id=data['conversation_id'],
+            sender=data['sender'],
+            message_text=data['message_text'],
+            translated_text=data.get('translated_text'),
+            message_type=data.get('message_type', 'text'),
+            voice_url=data.get('voice_url')
+        )
+        
+        if not success:
+            if result == "Conversation not found":
+                return {'message': result}, 404
+            return {'message': f'Failed to save message: {result}'}, 500
+            
+        return {
+            'status': 'success',
+            'message': 'Message saved successfully',
+            'data': result
+        }, 201
+
+@chatting_ns.route('/messages/update')
+class MessageResource(Resource):
+    @chatting_ns.expect(message_update_create_model)
+    @chatting_ns.response(201, 'Message saved successfully', message_save_update_response)
+    @chatting_ns.response(400, 'Invalid request data')
+    @chatting_ns.response(404, 'Conversation not found')
+    @chatting_ns.response(500, 'Internal server error')
+    def post(self):
+        """Save a new message update"""
+        data = chatting_ns.payload
+        
+        # Validate required fields
+        required_fields = ['conversation_id', 'sender', 'message_text']
+        if not all(field in data for field in required_fields):
+            return {'message': 'Missing required fields'}, 400
+            
+        success, result = save_message_update(
             conversation_id=data['conversation_id'],
             sender=data['sender'],
             message_text=data['message_text'],

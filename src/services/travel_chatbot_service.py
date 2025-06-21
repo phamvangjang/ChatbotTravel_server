@@ -857,7 +857,7 @@ def generate_natural_response(question: str, search_results: List[Dict],
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.7,
-            max_tokens=500
+            max_tokens=700
         )
         
         print("OpenAI API call successful")
