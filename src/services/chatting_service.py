@@ -12,6 +12,10 @@ from src.services.travel_chatbot_service import (
 )
 from src import db
 from datetime import datetime, timezone
+import os
+import json
+import openai
+from typing import Dict, List, Optional, Any
 
 def is_travel_related_question(question: str) -> bool:
     """
@@ -443,14 +447,18 @@ def get_conversation_messages(conversation_id: int):
             "message_id": msg.message_id,
             "conversation_id": msg.conversation_id,
             "message_text": msg.message_text,
+            "translated_text": msg.translated_text,
             "sender": msg.sender,
-            "sent_at": msg.sent_at.isoformat() if msg.sent_at else None
+            "message_type": msg.message_type,
+            "voice_url": msg.voice_url,
+            "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
+            "places": msg.get_places()
         } for msg in messages]
     except Exception as e:
         return False, str(e)
 
 def save_message(conversation_id: int, sender: str, message_text: str, translated_text: str = None, 
-                message_type: str = 'text', voice_url: str = None):
+                message_type: str = 'text', voice_url: str = None, places: list = None):
     """
     Save a new message to the database and get AI response if message is from user
     
@@ -461,6 +469,7 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
         translated_text (str, optional): Translated text of the message
         message_type (str, optional): Type of the message (default: text)
         voice_url (str, optional): URL of the voice message if any
+        places (list, optional): List of place names mentioned in the message
         
     Returns:
         tuple: (success: bool, result: dict or str)
@@ -483,6 +492,10 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
             voice_url=voice_url,
             sent_at=datetime.now(timezone.utc)
         )
+        
+        # Set places if provided
+        if places:
+            new_message.set_places(places)
         
         db.session.add(new_message)
         
@@ -512,6 +525,7 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                     sender="bot",
                     message_text=ai_response['text'],
                     message_type='text',
+                    places=places,
                     sent_at=datetime.now(timezone.utc)
                 )
                 
@@ -530,7 +544,8 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                         "translated_text": new_message.translated_text,
                         "message_type": new_message.message_type,
                         "voice_url": new_message.voice_url,
-                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
+                        "places": new_message.get_places()
                     },
                     "bot_message": {
                         "message_id": bot_message.message_id,
@@ -538,7 +553,8 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                         "sender": bot_message.sender,
                         "message_text": bot_message.message_text,
                         "message_type": bot_message.message_type,
-                        "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None
+                        "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None,
+                        "places": bot_message.get_places()
                     },
                 }
             except Exception as e:
@@ -554,7 +570,8 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                         "translated_text": new_message.translated_text,
                         "message_type": new_message.message_type,
                         "voice_url": new_message.voice_url,
-                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
+                        "places": new_message.get_places()
                     },
                     "error": f"Failed to get AI response: {str(e)}"
                 }
@@ -570,14 +587,15 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
             "translated_text": new_message.translated_text,
             "message_type": new_message.message_type,
             "voice_url": new_message.voice_url,
-            "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+            "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
+            "places": new_message.get_places()
         }
     except Exception as e:
         db.session.rollback()
         return False, str(e)
 
 def save_message_update(conversation_id: int, sender: str, message_text: str, translated_text: str = None, 
-                message_type: str = 'text', voice_url: str = None):
+                message_type: str = 'text', voice_url: str = None, places: list = None):
     """
     Save a new message update to the database and get AI response if message is from user
     
@@ -588,6 +606,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
         translated_text (str, optional): Translated text of the message
         message_type (str, optional): Type of the message (default: text)
         voice_url (str, optional): URL of the voice message if any
+        places (list, optional): List of place names mentioned in the message
         
     Returns:
         tuple: (success: bool, result: dict or str)
@@ -611,6 +630,10 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
             sent_at=datetime.now(timezone.utc)
         )
         
+        # Set places if provided
+        if places:
+            new_message.set_places(places)
+        
         db.session.add(new_message)
         
         # If message is from user, get AI response
@@ -626,6 +649,19 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         # Nếu xử lý du lịch thành công, sử dụng kết quả đó
                         print(f"✅ xử lý du lịch thành công")
                         ai_response_text = travel_result['response']
+                        
+                        # Trích xuất địa điểm từ kết quả tìm kiếm
+                        extracted_places = []
+                        if travel_result.get('search_results'):
+                            for result in travel_result['search_results']:
+                                place_name = result.get('ten_dia_diem', '')
+                                if place_name and place_name not in extracted_places:
+                                    extracted_places.append(place_name)
+                        
+                        # Clean và decode places trước khi lưu
+                        if extracted_places:
+                            cleaned_places = _clean_places_list(extracted_places)
+                            new_message.set_places(cleaned_places)
                         
                         # Tạo title từ kết quả du lịch nếu có
                         if travel_result.get('search_results'):
@@ -666,6 +702,17 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                     sent_at=datetime.now(timezone.utc)
                 )
                 
+                # Nếu có địa điểm từ travel_result, thêm vào bot message
+                if travel_result.get('success') and travel_result.get('search_results'):
+                    bot_places = []
+                    for result in travel_result['search_results']:
+                        place_name = result.get('ten_dia_diem', '')
+                        if place_name and place_name not in bot_places:
+                            bot_places.append(place_name)
+                    if bot_places:
+                        cleaned_bot_places = _clean_places_list(bot_places)
+                        bot_message.set_places(cleaned_bot_places)
+                
                 db.session.add(bot_message)
                 db.session.commit()
                 db.session.refresh(new_message)
@@ -681,7 +728,8 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         "translated_text": new_message.translated_text,
                         "message_type": new_message.message_type,
                         "voice_url": new_message.voice_url,
-                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
+                        "places": new_message.get_places()
                     },
                     "bot_message": {
                         "message_id": bot_message.message_id,
@@ -689,7 +737,8 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         "sender": bot_message.sender,
                         "message_text": bot_message.message_text,
                         "message_type": bot_message.message_type,
-                        "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None
+                        "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None,
+                        "places": bot_message.get_places()
                     },
                     "travel_data": travel_result if travel_result.get('success') else None
                 }
@@ -706,7 +755,8 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         "translated_text": new_message.translated_text,
                         "message_type": new_message.message_type,
                         "voice_url": new_message.voice_url,
-                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+                        "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
+                        "places": new_message.get_places()
                     },
                     "error": f"Failed to get AI response: {str(e)}"
                 }
@@ -722,7 +772,8 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
             "translated_text": new_message.translated_text,
             "message_type": new_message.message_type,
             "voice_url": new_message.voice_url,
-            "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None
+            "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
+            "places": new_message.get_places()
         }
     except Exception as e:
         db.session.rollback()
@@ -762,4 +813,133 @@ def end_conversation(conversation_id: int):
         }
     except Exception as e:
         db.session.rollback()
-        return False, str(e) 
+        return False, str(e)
+
+def _decode_place_name(place_name: str) -> str:
+    """
+    Decode place name với nhiều phương pháp khác nhau
+    """
+    if not place_name or not isinstance(place_name, str):
+        return place_name
+    
+    # Phương pháp 1: Xử lý double encoding UTF-8
+    try:
+        if 'Ã' in place_name or 'á»' in place_name or 'Ä' in place_name:
+            # Thử decode double encoding
+            decoded = place_name.encode('latin-1').decode('utf-8')
+            if decoded != place_name:
+                return decoded
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    
+    # Phương pháp 2: Thử decode Unicode escape sequences
+    try:
+        decoded = place_name.encode('utf-8').decode('unicode_escape')
+        if decoded != place_name:
+            return decoded
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    
+    # Phương pháp 3: Thử decode với latin-1 rồi encode lại
+    try:
+        decoded = place_name.encode('latin-1').decode('utf-8')
+        if decoded != place_name:
+            return decoded
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    
+    # Phương pháp 4: Thử decode với cp1252 rồi encode lại
+    try:
+        decoded = place_name.encode('cp1252').decode('utf-8')
+        if decoded != place_name:
+            return decoded
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    
+    # Phương pháp 5: Xử lý các escape sequences đặc biệt cho tiếng Việt
+    try:
+        replacements = {
+            # Dấu thanh
+            '\\u00e0': 'à', '\\u00e1': 'á', '\\u00e2': 'â', '\\u00e3': 'ã',
+            '\\u00e8': 'è', '\\u00e9': 'é', '\\u00ea': 'ê', '\\u00eb': 'ë',
+            '\\u00ec': 'ì', '\\u00ed': 'í', '\\u00ee': 'î', '\\u00ef': 'ï',
+            '\\u00f2': 'ò', '\\u00f3': 'ó', '\\u00f4': 'ô', '\\u00f5': 'õ',
+            '\\u00f9': 'ù', '\\u00fa': 'ú', '\\u00fb': 'û', '\\u00fc': 'ü',
+            '\\u00fd': 'ý', '\\u00ff': 'ÿ',
+            
+            # Chữ cái đặc biệt
+            '\\u0103': 'ă', '\\u0102': 'Ă',
+            '\\u0111': 'đ', '\\u0110': 'Đ',
+            
+            # Dấu thanh kết hợp
+            '\\u1ea1': 'ạ', '\\u1ea3': 'ả', '\\u1ea5': 'ấ', '\\u1ea7': 'ầ',
+            '\\u1ea9': 'ẩ', '\\u1eab': 'ẫ', '\\u1ead': 'ậ', '\\u1eaf': 'ắ',
+            '\\u1eb1': 'ằ', '\\u1eb3': 'ẳ', '\\u1eb5': 'ẵ', '\\u1eb7': 'ặ',
+            '\\u1eb9': 'ẹ', '\\u1ebb': 'ẻ', '\\u1ebd': 'ẽ', '\\u1ebf': 'ế',
+            '\\u1ec1': 'ề', '\\u1ec3': 'ể', '\\u1ec5': 'ễ', '\\u1ec7': 'ệ',
+            '\\u1ec9': 'ỉ', '\\u1ecb': 'ị', '\\u1ecd': 'ọ', '\\u1ecf': 'ỏ',
+            '\\u1ed1': 'ố', '\\u1ed3': 'ồ', '\\u1ed5': 'ổ', '\\u1ed7': 'ỗ',
+            '\\u1ed9': 'ộ', '\\u1edb': 'ớ', '\\u1edd': 'ờ', '\\u1edf': 'ở',
+            '\\u1ee1': 'ỡ', '\\u1ee3': 'ợ', '\\u1ee5': 'ụ', '\\u1ee7': 'ủ',
+            '\\u1ee9': 'ứ', '\\u1eeb': 'ừ', '\\u1eed': 'ử', '\\u1eef': 'ữ',
+            '\\u1ef1': 'ự', '\\u1ef3': 'ỳ', '\\u1ef5': 'ỵ', '\\u1ef7': 'ỷ',
+            '\\u1ef9': 'ỹ',
+            
+            # Chinese characters
+            '\\u4e2d': '中', '\\u6587': '文', '\\u8bed': '语', '\\u8a00': '言',
+            '\\u65e5': '日', '\\u672c': '本', '\\u8a9e': '語',
+            '\\ud55c': '한', '\\uad6d': '국', '\\uc5b4': '어',
+        }
+        
+        decoded = place_name
+        for escaped, unicode_char in replacements.items():
+            decoded = decoded.replace(escaped, unicode_char)
+        
+        if decoded != place_name:
+            return decoded
+    except Exception:
+        pass
+    
+    # Phương pháp 6: Xử lý double encoding phức tạp hơn
+    try:
+        # Kiểm tra xem có phải double encoding không
+        if 'Ã' in place_name or 'á»' in place_name or 'Ä' in place_name:
+            # Thử decode nhiều lần
+            current = place_name
+            for _ in range(3):  # Tối đa 3 lần decode
+                try:
+                    decoded = current.encode('latin-1').decode('utf-8')
+                    if decoded == current:  # Không thay đổi nữa
+                        break
+                    current = decoded
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    break
+            return current
+    except Exception:
+        pass
+    
+    # Nếu không decode được, trả về nguyên bản
+    return place_name
+
+def _clean_places_list(places_list: List[str]) -> List[str]:
+    """
+    Clean và decode danh sách places
+    """
+    if not places_list:
+        return []
+    
+    cleaned_places = []
+    for place in places_list:
+        if isinstance(place, str):
+            decoded_place = _decode_place_name(place)
+            # Normalize Unicode
+            try:
+                import unicodedata
+                normalized = unicodedata.normalize('NFC', decoded_place)
+                cleaned_places.append(normalized)
+            except Exception:
+                cleaned_places.append(decoded_place)
+        else:
+            cleaned_places.append(str(place))
+    
+    return cleaned_places 
