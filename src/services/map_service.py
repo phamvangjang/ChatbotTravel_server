@@ -170,26 +170,47 @@ def search_attractions_by_name_and_language(name: str, language: str = None) -> 
         print(f'ℹ️ Lỗi khi tìm kiếm địa điểm: {e}')
         return False, str(e)
 
-def search_attractions_by_name(name: str) -> tuple[bool, List[Dict[str, Any]] | str]:
+def search_attractions_by_name(query: str, language: str = None, limit: int = 20) -> tuple[bool, List[Dict[str, Any]] | str]:
     """
-    Search attractions by name (fuzzy search)
+    Search attractions by name with optional language filtering
     
     Args:
-        name (str): Name to search for
+        query (str): Search query
+        language (str, optional): Language filter (english, chinese, korean, japanese, vietnamese)
+        limit (int): Maximum number of results to return
         
     Returns:
         tuple: (success: bool, result: List[Dict] or str)
     """
     try:
-        if not name or not isinstance(name, str):
+        print(f"ℹ️ search_attractions_by_name with query: {query}, language: {language}, limit: {limit}")
+        
+        if not query or not isinstance(query, str):
             return True, []
             
-        search_term = f"%{name.lower()}%"
+        search_term = f"%{query.lower()}%"
         
-        # Tìm kiếm với LIKE (case insensitive)
-        attractions = Attraction.query.filter(
-            db.func.lower(Attraction.name).like(search_term)
-        ).all()
+        # Tìm kiếm với LIKE (case insensitive) trong name, address, description
+        query_filter = db.or_(
+            db.func.lower(Attraction.name).like(search_term),
+            db.func.lower(Attraction.address).like(search_term),
+            db.func.lower(Attraction.description).like(search_term)
+        )
+        
+        # Tìm kiếm trong tags (JSON array)
+        # Note: MySQL JSON_SEARCH function for searching in JSON arrays
+        if hasattr(db.func, 'json_search'):
+            tags_filter = db.func.json_search(Attraction.tags, 'one', search_term)
+            query_filter = db.or_(query_filter, tags_filter.isnot(None))
+        
+        db_query = Attraction.query.filter(query_filter)
+        
+        # Thêm filter ngôn ngữ nếu có
+        if language:
+            db_query = db_query.filter(Attraction.website == language.lower())
+        
+        # Giới hạn số lượng kết quả
+        attractions = db_query.limit(limit).all()
         
         result = []
         for attraction in attractions:
@@ -211,6 +232,7 @@ def search_attractions_by_name(name: str) -> tuple[bool, List[Dict[str, Any]] | 
             }
             result.append(attraction_dict)
         
+        print(f"ℹ️ Total attractions found: {len(result)}")
         return True, result
         
     except Exception as e:

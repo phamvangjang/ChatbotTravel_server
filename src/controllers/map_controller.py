@@ -1,6 +1,6 @@
 from flask import request
 from flask_restx import Namespace, Resource, fields
-from src.services.map_service import get_attractions_from_places
+from src.services.map_service import get_attractions_from_places, search_attractions_by_name
 
 # Create namespace for map API
 map_ns = Namespace('map', description='Map and location related operations')
@@ -69,6 +69,40 @@ class AttractionsFromPlacesResource(Resource):
             return {
                 'status': 'success',
                 'message': 'Successfully retrieved attractions',
+                'data': result
+            }
+            
+        except Exception as e:
+            return {'message': f'Error processing request: {str(e)}'}, 500
+
+@map_ns.route('/attractions/search')
+class AttractionsSearchResource(Resource):
+    @map_ns.doc(params={
+        'q': 'Search query (required)',
+        'language': 'Language filter (english, chinese, korean, japanese, vietnamese)',
+        'limit': 'Maximum number of results (default: 20)'
+    })
+    @map_ns.response(200, 'Successfully searched attractions', attractions_response_model)
+    @map_ns.response(400, 'Missing search query')
+    @map_ns.response(500, 'Internal server error')
+    def get(self):
+        """Search attractions by name, address, description, or tags"""
+        query = request.args.get('q', '')
+        language = request.args.get('language')
+        limit = request.args.get('limit', 20, type=int)
+        
+        if not query:
+            return {'message': 'Search query parameter "q" is required'}, 400
+        
+        try:
+            success, result = search_attractions_by_name(query, language, limit)
+            
+            if not success:
+                return {'message': f'Failed to search attractions: {result}'}, 500
+                
+            return {
+                'status': 'success',
+                'message': f'Successfully searched attractions for query: {query}',
                 'data': result
             }
             
