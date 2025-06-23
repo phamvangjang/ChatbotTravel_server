@@ -619,7 +619,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
             
         # print(f"Current conversation title: {conversation.title}")
             
-        # Create new message
+        # Create new message (không lưu places cho user message)
         new_message = Message(
             conversation_id=conversation_id,
             sender=sender,
@@ -629,10 +629,6 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
             voice_url=voice_url,
             sent_at=datetime.now(timezone.utc)
         )
-        
-        # Set places if provided
-        if places:
-            new_message.set_places(places)
         
         db.session.add(new_message)
         
@@ -657,11 +653,6 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                                 place_name = result.get('ten_dia_diem', '')
                                 if place_name and place_name not in extracted_places:
                                     extracted_places.append(place_name)
-                        
-                        # Clean và decode places trước khi lưu
-                        if extracted_places:
-                            cleaned_places = _clean_places_list(extracted_places)
-                            new_message.set_places(cleaned_places)
                         
                         # Tạo title từ kết quả du lịch nếu có
                         if travel_result.get('search_results'):
@@ -702,7 +693,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                     sent_at=datetime.now(timezone.utc)
                 )
                 
-                # Nếu có địa điểm từ travel_result, thêm vào bot message
+                # Chỉ lưu places cho bot message, không lưu cho user message
                 if travel_result.get('success') and travel_result.get('search_results'):
                     bot_places = []
                     for result in travel_result['search_results']:
@@ -729,7 +720,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         "message_type": new_message.message_type,
                         "voice_url": new_message.voice_url,
                         "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
-                        "places": new_message.get_places()
+                        "places": []  # User message không có places
                     },
                     "bot_message": {
                         "message_id": bot_message.message_id,
@@ -756,7 +747,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         "message_type": new_message.message_type,
                         "voice_url": new_message.voice_url,
                         "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
-                        "places": new_message.get_places()
+                        "places": []  # User message không có places
                     },
                     "error": f"Failed to get AI response: {str(e)}"
                 }
@@ -773,7 +764,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
             "message_type": new_message.message_type,
             "voice_url": new_message.voice_url,
             "sent_at": new_message.sent_at.isoformat() if new_message.sent_at else None,
-            "places": new_message.get_places()
+            "places": new_message.get_places()  # Bot message có thể có places
         }
     except Exception as e:
         db.session.rollback()
