@@ -34,11 +34,13 @@ def create_app():
     from src.controllers.chatting_controller import chatting_ns
     from src.controllers.travel_chatbot_controller import travel_chatbot_ns
     from src.controllers.scape_controller import scape_ns
+    from src.controllers.map_controller import map_ns
     
     api.add_namespace(auth_ns, path='/api/auth')
     api.add_namespace(chatting_ns, path='/api/chatting')
     api.add_namespace(travel_chatbot_ns, path='/api/travel-chatbot')
     api.add_namespace(scape_ns, path='/api/scape')
+    api.add_namespace(map_ns, path='/api/map')
     
     # Create database tables
     with app.app_context():

@@ -13,7 +13,7 @@ class Message(db.Model):
     message_type = db.Column(db.Enum('text', 'voice'))
     voice_url = db.Column(db.Text)
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
-    places = db.Column(db.JSON)  # Lưu trữ danh sách các tên địa điểm dưới dạng JSON
+    places = db.Column(db.JSON)  # Lưu trữ danh sách các tên địa điểm dưới dạng mảng JSON
     
     def __init__(self, **kwargs):
         super(Message, self).__init__(**kwargs)
@@ -25,10 +25,10 @@ class Message(db.Model):
         if self.places is None:
             self.places = []
         elif isinstance(self.places, str):
-            # Nếu places là string (JSON string), parse nó
+            # Nếu places là string, thử parse JSON
             try:
                 self.places = json.loads(self.places)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, ValueError):
                 self.places = []
         elif not isinstance(self.places, list):
             self.places = []
@@ -191,9 +191,10 @@ class Message(db.Model):
                         clean_places.append(place)
                 else:
                     clean_places.append(str(place))
+            
             self.places = clean_places
         else:
-            raise ValueError("places_list phải là một list")
+            self.places = []
     
     def clear_places(self):
         """Xóa tất cả địa điểm"""

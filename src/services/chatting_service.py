@@ -525,9 +525,12 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                     sender="bot",
                     message_text=ai_response['text'],
                     message_type='text',
-                    places=places,
                     sent_at=datetime.now(timezone.utc)
                 )
+                
+                # Set places if provided
+                if places:
+                    bot_message.set_places(places)
                 
                 db.session.add(bot_message)
                 db.session.commit()
@@ -552,6 +555,7 @@ def save_message(conversation_id: int, sender: str, message_text: str, translate
                         "conversation_id": bot_message.conversation_id,
                         "sender": bot_message.sender,
                         "message_text": bot_message.message_text,
+                        "translated_text": bot_message.translated_text,
                         "message_type": bot_message.message_type,
                         "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None,
                         "places": bot_message.get_places()
@@ -695,6 +699,7 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                 
                 # Chỉ lưu places cho bot message, không lưu cho user message
                 if travel_result.get('success') and travel_result.get('search_results'):
+                    bot_message.translated_text = travel_result.get('language')
                     bot_places = []
                     for result in travel_result['search_results']:
                         place_name = result.get('ten_dia_diem', '')
@@ -727,7 +732,9 @@ def save_message_update(conversation_id: int, sender: str, message_text: str, tr
                         "conversation_id": bot_message.conversation_id,
                         "sender": bot_message.sender,
                         "message_text": bot_message.message_text,
+                        "translated_text": bot_message.translated_text,
                         "message_type": bot_message.message_type,
+                        "voice_url": bot_message.voice_url,
                         "sent_at": bot_message.sent_at.isoformat() if bot_message.sent_at else None,
                         "places": bot_message.get_places()
                     },

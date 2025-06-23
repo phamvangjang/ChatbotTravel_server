@@ -102,6 +102,14 @@ def import_csv_to_attractions(csv_file_path):
         # Đọc file CSV
         df = pd.read_csv(csv_file_path)
         
+        # Debug: In ra các cột có trong CSV
+        print(f"🔍 Debug - Available columns in CSV: {list(df.columns)}")
+        print(f"🔍 Debug - First few rows of ngon_ngu column:")
+        if 'ngon_ngu' in df.columns:
+            print(df['ngon_ngu'].head())
+        else:
+            print("❌ Column 'ngon_ngu' not found in CSV!")
+        
         # Kiểm tra các cột bắt buộc
         required_columns = ['ten_dia_diem', 'dia_chi']
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -131,7 +139,8 @@ def import_csv_to_attractions(csv_file_path):
             'danh_gia': 'rating',
             'hinh_anh': 'image_url',
             'Latitude': 'latitude',
-            'Longitude': 'longitude'
+            'Longitude': 'longitude',
+            'ngon_ngu': 'website',  # Cột ngôn ngữ map với website field
         }
         
         imported_count = 0
@@ -157,6 +166,7 @@ def import_csv_to_attractions(csv_file_path):
                 # Kiểm tra dữ liệu bắt buộc
                 ten_dia_diem = clean_value(row.get('ten_dia_diem', ''))
                 dia_chi = clean_value(row.get('dia_chi', ''))
+                website = clean_value(row.get('ngon_ngu', ''))
                 
                 if not ten_dia_diem:
                     raise ValueError("Tên địa điểm không được để trống")
@@ -165,9 +175,8 @@ def import_csv_to_attractions(csv_file_path):
                     raise ValueError("Địa chỉ không được để trống")
                 
                 # Xử lý các trường không có trong CSV với giá trị mặc định
-                # phone_number, website, aliases không có trong CSV nên set null
+                # phone_number không có trong CSV nên set null
                 phone_number = None
-                website = None
                 aliases = []  # JSON array rỗng
                 
                 # Xử lý các giá trị số để tránh NaN
