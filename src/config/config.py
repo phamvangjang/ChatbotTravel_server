@@ -5,16 +5,13 @@ load_dotenv()
 
 class Config:
     # Database
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL')
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_POSTGRESQL_URL')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # MySQL charset configuration for proper Unicode support
+    # PostgreSQL configuration
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'connect_args': {
-            'charset': 'utf8mb4',
-            'use_unicode': True,
-            'init_command': "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
-        }
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
     }
     
     # JWT

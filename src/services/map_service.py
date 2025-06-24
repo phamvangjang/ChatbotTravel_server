@@ -29,7 +29,7 @@ def get_attractions_from_places(places: List[str], language: str = None) -> tupl
             
             # Thêm filter ngôn ngữ nếu có
             if language:
-                query = query.filter(Attraction.website == language.lower())
+                query = query.filter(Attraction.language == language.lower())
             
             attractions = query.all()
             
@@ -51,14 +51,14 @@ def get_attractions_from_places(places: List[str], language: str = None) -> tupl
                             'category': attraction.category,
                             'rating': float(attraction.rating) if attraction.rating else None,
                             'image_url': attraction.image_url,
-                            'language': attraction.website,  # website field stores language
+                            'language': attraction.language,  # language field stores language
                             'phone': attraction.phone_number,
                             'opening_hours': attraction.opening_hours,
                             'price': attraction.price,
                             'tags': attraction.tags if attraction.tags else []
                         }
                         detected_attractions.append(attraction_dict)
-                        print(f"ℹ️ Found attraction: {attraction.name} for place: {place_name}, language: {attraction.website}")
+                        print(f"ℹ️ Found attraction: {attraction.name} for place: {place_name}, language: {attraction.language}")
         
         print(f"ℹ️ Total attractions found: {len(detected_attractions)}")
         return True, detected_attractions
@@ -87,7 +87,7 @@ def get_attractions_by_language(language: str) -> tuple[bool, List[Dict[str, Any
             return False, f"Invalid language. Must be one of: {', '.join(valid_languages)}"
         
         attractions = Attraction.query.filter(
-            Attraction.website == language.lower()
+            Attraction.language == language.lower()
         ).all()
         
         result = []
@@ -102,7 +102,7 @@ def get_attractions_by_language(language: str) -> tuple[bool, List[Dict[str, Any
                 'category': attraction.category,
                 'rating': float(attraction.rating) if attraction.rating else None,
                 'image_url': attraction.image_url,
-                'language': attraction.website,  # website field stores language
+                'language': attraction.language,  # language field stores language
                 'phone': attraction.phone_number,
                 'opening_hours': attraction.opening_hours,
                 'price': attraction.price,
@@ -140,7 +140,7 @@ def search_attractions_by_name_and_language(name: str, language: str = None) -> 
         
         # Thêm filter ngôn ngữ nếu có
         if language:
-            query = query.filter(Attraction.website == language.lower())
+            query = query.filter(Attraction.language == language.lower())
         
         attractions = query.all()
         
@@ -156,7 +156,7 @@ def search_attractions_by_name_and_language(name: str, language: str = None) -> 
                 'category': attraction.category,
                 'rating': float(attraction.rating) if attraction.rating else None,
                 'image_url': attraction.image_url,
-                'language': attraction.website,  # website field stores language
+                'language': attraction.language,  # language field stores language
                 'phone': attraction.phone_number,
                 'opening_hours': attraction.opening_hours,
                 'price': attraction.price,
@@ -207,7 +207,7 @@ def search_attractions_by_name(query: str, language: str = None, limit: int = 20
         
         # Thêm filter ngôn ngữ nếu có
         if language:
-            db_query = db_query.filter(Attraction.website == language.lower())
+            db_query = db_query.filter(Attraction.language == language.lower())
         
         # Giới hạn số lượng kết quả
         attractions = db_query.limit(limit).all()
@@ -224,7 +224,7 @@ def search_attractions_by_name(query: str, language: str = None, limit: int = 20
                 'category': attraction.category,
                 'rating': float(attraction.rating) if attraction.rating else None,
                 'image_url': attraction.image_url,
-                'language': attraction.website,  # website field stores language
+                'language': attraction.language,  # language field stores language
                 'phone': attraction.phone_number,
                 'opening_hours': attraction.opening_hours,
                 'price': attraction.price,
@@ -260,7 +260,7 @@ def get_attractions_by_category(category: str, language: str = None) -> tuple[bo
         
         # Thêm filter ngôn ngữ nếu có
         if language:
-            query = query.filter(Attraction.website == language.lower())
+            query = query.filter(Attraction.language == language.lower())
         
         attractions = query.all()
         
@@ -276,7 +276,7 @@ def get_attractions_by_category(category: str, language: str = None) -> tuple[bo
                 'category': attraction.category,
                 'rating': float(attraction.rating) if attraction.rating else None,
                 'image_url': attraction.image_url,
-                'language': attraction.website,  # website field stores language
+                'language': attraction.language,  # language field stores language
                 'phone': attraction.phone_number,
                 'opening_hours': attraction.opening_hours,
                 'price': attraction.price,

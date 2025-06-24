@@ -140,7 +140,7 @@ def import_csv_to_attractions(csv_file_path):
             'hinh_anh': 'image_url',
             'Latitude': 'latitude',
             'Longitude': 'longitude',
-            'ngon_ngu': 'website',  # Cột ngôn ngữ map với website field
+            'ngon_ngu': 'language',  # Cột ngôn ngữ map với language field
         }
         
         imported_count = 0
@@ -166,7 +166,7 @@ def import_csv_to_attractions(csv_file_path):
                 # Kiểm tra dữ liệu bắt buộc
                 ten_dia_diem = clean_value(row.get('ten_dia_diem', ''))
                 dia_chi = clean_value(row.get('dia_chi', ''))
-                website = clean_value(row.get('ngon_ngu', ''))
+                language = clean_value(row.get('ngon_ngu', ''))
                 
                 if not ten_dia_diem:
                     raise ValueError("Tên địa điểm không được để trống")
@@ -227,7 +227,7 @@ def import_csv_to_attractions(csv_file_path):
                     longitude=longitude_final,
                     # Các trường không có trong CSV - set giá trị mặc định
                     phone_number=phone_number,
-                    website=website,
+                    language=language,
                     aliases=aliases
                 )
                 

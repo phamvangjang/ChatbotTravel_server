@@ -7,10 +7,10 @@ class Message(db.Model):
     
     message_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('Conversations.conversation_id'))
-    sender = db.Column(db.Enum('user', 'bot'))
+    sender = db.Column(db.Enum('user', 'bot', name='sender_enum'))
     message_text = db.Column(db.Text)
     translated_text = db.Column(db.Text)
-    message_type = db.Column(db.Enum('text', 'voice'))
+    message_type = db.Column(db.Enum('text', 'voice', name='message_type_enum'))
     voice_url = db.Column(db.Text)
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
     places = db.Column(db.JSON)  # Lưu trữ danh sách các tên địa điểm dưới dạng mảng JSON

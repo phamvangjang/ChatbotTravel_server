@@ -1,5 +1,5 @@
 from src.models.base import db
-from sqlalchemy.dialects.mysql import JSON
+from sqlalchemy import JSON
 
 class Attraction(db.Model):
     __tablename__ = 'Attractions'
@@ -17,7 +17,7 @@ class Attraction(db.Model):
     price = db.Column(db.Float)
     opening_hours = db.Column(db.String(200))
     phone_number = db.Column(db.String(20))
-    website = db.Column(db.String(500))
+    language = db.Column(db.String(500))
     aliases = db.Column(JSON)  # Store as JSON array
     
     # Relationship with ItineraryItem - sử dụng back_populates thay vì backref
@@ -43,6 +43,6 @@ class Attraction(db.Model):
             'price': self.price,
             'opening_hours': self.opening_hours,
             'phone_number': self.phone_number,
-            'website': self.website,
+            'language': self.language,
             'aliases': self.aliases or []
         } 
