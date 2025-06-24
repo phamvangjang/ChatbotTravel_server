@@ -5,6 +5,15 @@ from flask_mail import Mail
 from src.models.base import db
 from src.config.config import Config
 
+# Import all models to ensure they are registered with SQLAlchemy
+from src.models.user import User
+from src.models.attraction import Attraction
+from src.models.message import Message
+from src.models.conversation import Conversation
+from src.models.otp import OTP
+from src.models.itinerary import Itinerary
+from src.models.itinerary_item import ItineraryItem
+
 mail = Mail()
 
 def create_app():
@@ -35,12 +44,14 @@ def create_app():
     from src.controllers.travel_chatbot_controller import travel_chatbot_ns
     from src.controllers.scape_controller import scape_ns
     from src.controllers.map_controller import map_ns
+    from src.controllers.Itinerary_controller import itinerary_ns
     
     api.add_namespace(auth_ns, path='/api/auth')
     api.add_namespace(chatting_ns, path='/api/chatting')
     api.add_namespace(travel_chatbot_ns, path='/api/travel-chatbot')
     api.add_namespace(scape_ns, path='/api/scape')
     api.add_namespace(map_ns, path='/api/map')
+    api.add_namespace(itinerary_ns, path='/api/itinerary')
     
     # Create database tables
     with app.app_context():
