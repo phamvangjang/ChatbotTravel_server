@@ -277,7 +277,7 @@ class MessageResource(Resource):
 @chatting_ns.route('/messages/voice')
 class VoiceMessageResource(Resource):
     @chatting_ns.expect(voice_message_parser)
-    @chatting_ns.response(201, 'Voice message processed successfully', message_save_response)
+    @chatting_ns.response(201, 'Voice message processed successfully', message_save_update_response)
     @chatting_ns.response(400, 'Invalid request data')
     @chatting_ns.response(404, 'Conversation not found')
     @chatting_ns.response(500, 'Internal server error')
@@ -330,8 +330,8 @@ class VoiceMessageResource(Resource):
                 if not success:
                     return {'message': result['error']}, 500
                 
-                # Save message with transcribed text
-                success, message_result = save_message(
+                # Save message with transcribed text using save_message_update
+                success, message_result = save_message_update(
                     conversation_id=int(conversation_id),
                     sender=sender,
                     message_text=result['text'],
