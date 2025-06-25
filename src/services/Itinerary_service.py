@@ -100,7 +100,7 @@ def create_itinerary_with_items(user_id: int, selected_date: str,
 
 def get_user_itineraries(user_id: int) -> tuple[bool, List[Dict[str, Any]] | str]:
     """
-    Get all itineraries for a user
+    Get all itineraries for a user (excluding soft deleted ones)
     
     Args:
         user_id (int): ID of the user
@@ -116,8 +116,8 @@ def get_user_itineraries(user_id: int) -> tuple[bool, List[Dict[str, Any]] | str
         if not user:
             return False, f"User with ID {user_id} not found"
         
-        # Get itineraries ordered by selected date
-        itineraries = Itinerary.query.filter_by(user_id=user_id)\
+        # Get itineraries ordered by selected date (excluding soft deleted ones)
+        itineraries = Itinerary.query.filter_by(user_id=user_id, is_deleted=False)\
             .order_by(Itinerary.selected_date.asc()).all()
         
         result = [itinerary.to_dict() for itinerary in itineraries]
@@ -163,37 +163,30 @@ def get_itinerary_by_id(itinerary_id: int, user_id: int) -> tuple[bool, Dict[str
 
 def delete_itinerary(itinerary_id: int, user_id: int) -> tuple[bool, str]:
     """
-    Delete an entire itinerary
-    
+    Delete (soft delete) an entire itinerary by setting isDelete=True
     Args:
         itinerary_id (int): ID of the itinerary
         user_id (int): ID of the user (for authorization)
-        
     Returns:
         tuple: (success: bool, message: str)
     """
     try:
-        print(f"ℹ️ Deleting itinerary: itinerary_id={itinerary_id}, user_id={user_id}")
-        
+        print(f"ℹ️ Soft deleting itinerary: itinerary_id={itinerary_id}, user_id={user_id}")
         # Find the itinerary
         itinerary = Itinerary.query.get(itinerary_id)
         if not itinerary:
             return False, f"Itinerary with ID {itinerary_id} not found"
-        
         # Check if user owns this itinerary
         if itinerary.user_id != user_id:
             return False, "You are not authorized to delete this itinerary"
-        
-        # Delete the itinerary (items will be deleted automatically due to cascade)
-        db.session.delete(itinerary)
+        # Soft delete: set isDelete to True
+        itinerary.is_deleted = True
         db.session.commit()
-        
-        print(f"ℹ️ Successfully deleted itinerary with ID: {itinerary_id}")
-        return True, f"Successfully deleted itinerary with ID: {itinerary_id}"
-        
+        print(f"ℹ️ Successfully soft deleted itinerary with ID: {itinerary_id}")
+        return True, f"Successfully deleted itinerary with ID: {itinerary_id} (soft delete)"
     except Exception as e:
         db.session.rollback()
-        print(f'ℹ️ Lỗi khi xóa lịch trình: {e}')
+        print(f'ℹ️ Lỗi khi xóa mềm lịch trình: {e}')
         return False, str(e)
 
 def update_itinerary_item(item_id: int, user_id: int, 

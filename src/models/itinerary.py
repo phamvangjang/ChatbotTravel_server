@@ -11,6 +11,7 @@ class Itinerary(db.Model):
     notes = db.Column(db.Text)  # General notes for the entire itinerary
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_deleted = db.Column(db.Boolean, default=False)
     
     # Relationships
     user = db.relationship('User', backref='itineraries', lazy=True)
@@ -28,5 +29,6 @@ class Itinerary(db.Model):
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'is_deleted': self.is_deleted,
             'items': [item.to_dict() for item in self.items] if self.items else []
         }
