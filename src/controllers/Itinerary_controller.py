@@ -131,13 +131,19 @@ class CreateItineraryResource(Resource):
         except Exception as e:
             return {'message': f'Error processing request: {str(e)}'}, 500
 
-@itinerary_ns.route('/user/<int:user_id>')
+@itinerary_ns.route('/list')
 class UserItinerariesResource(Resource):
+    @itinerary_ns.doc(params={
+        'user_id': 'User ID (required)'
+    })
     @itinerary_ns.response(200, 'Successfully retrieved itineraries', itinerary_list_response_model)
     @itinerary_ns.response(404, 'User not found')
     @itinerary_ns.response(500, 'Internal server error')
-    def get(self, user_id):
+    def get(self):
         """Get all itineraries for a user"""
+        user_id = request.args.get('user_id', type=int)
+        if not user_id:
+            return {'message': 'user_id parameter is required'}, 400
         try:
             success, result = get_user_itineraries(user_id)
             
@@ -155,70 +161,70 @@ class UserItinerariesResource(Resource):
         except Exception as e:
             return {'message': f'Error processing request: {str(e)}'}, 500
 
-@itinerary_ns.route('/<int:itinerary_id>')
-class ItineraryResource(Resource):
+@itinerary_ns.route('/detail')
+class ItineraryDetailResource(Resource):
     @itinerary_ns.doc(params={
+        'itinerary_id': 'Itinerary ID (required)',
         'user_id': 'User ID (required for authorization)'
     })
     @itinerary_ns.response(200, 'Successfully retrieved itinerary', itinerary_response_model)
     @itinerary_ns.response(404, 'Itinerary not found')
     @itinerary_ns.response(403, 'Not authorized to view this itinerary')
     @itinerary_ns.response(500, 'Internal server error')
-    def get(self, itinerary_id):
+    def get(self):
         """Get a specific itinerary by ID"""
+        itinerary_id = request.args.get('itinerary_id', type=int)
         user_id = request.args.get('user_id', type=int)
-        
+        if not itinerary_id:
+            return {'message': 'itinerary_id parameter is required'}, 400
         if not user_id:
             return {'message': 'user_id parameter is required'}, 400
-        
         try:
             success, result = get_itinerary_by_id(itinerary_id, user_id)
-            
             if not success:
                 if "not found" in str(result):
                     return {'message': str(result)}, 404
                 if "not authorized" in str(result):
                     return {'message': str(result)}, 403
                 return {'message': str(result)}, 500
-                
             return {
                 'status': 'success',
                 'message': f'Successfully retrieved itinerary {itinerary_id}',
                 'data': result
             }
-            
         except Exception as e:
             return {'message': f'Error processing request: {str(e)}'}, 500
 
+@itinerary_ns.route('/delete')
+class ItineraryDeleteResource(Resource):
     @itinerary_ns.doc(params={
+        'itinerary_id': 'Itinerary ID (required)',
         'user_id': 'User ID (required for authorization)'
     })
     @itinerary_ns.response(200, 'Successfully deleted itinerary')
     @itinerary_ns.response(404, 'Itinerary not found')
     @itinerary_ns.response(403, 'Not authorized to delete this itinerary')
     @itinerary_ns.response(500, 'Internal server error')
-    def delete(self, itinerary_id):
+    def delete(self):
         """Delete an entire itinerary"""
+        itinerary_id = request.args.get('itinerary_id', type=int)
         user_id = request.args.get('user_id', type=int)
-        
+        if not itinerary_id:
+            return {'message': 'itinerary_id parameter is required'}, 400
         if not user_id:
             return {'message': 'user_id parameter is required'}, 400
-        
         try:
             success, result = delete_itinerary(itinerary_id, user_id)
-            
             if not success:
                 if "not found" in str(result):
                     return {'message': str(result)}, 404
                 if "not authorized" in str(result):
                     return {'message': str(result)}, 403
                 return {'message': str(result)}, 500
-                
             return {
                 'status': 'success',
                 'message': result
             }
-            
         except Exception as e:
             return {'message': f'Error processing request: {str(e)}'}, 500
 
