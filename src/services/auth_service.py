@@ -141,4 +141,12 @@ def reset_password(email, otp_code, new_password):
     
     db.session.commit()
     
-    return True, 'Password has been reset successfully' 
+    return True, 'Password has been reset successfully'
+
+def update_user_name(user_id, new_full_name):
+    user = User.query.filter_by(user_id=user_id).first()
+    if not user:
+        return False, 'User not found'
+    user.full_name = new_full_name
+    db.session.commit()
+    return True, 'User name updated successfully' 

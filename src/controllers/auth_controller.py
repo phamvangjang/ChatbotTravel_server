@@ -4,7 +4,8 @@ from src.services.auth_service import (
     verify_otp,
     login_user,
     forgot_password,
-    reset_password
+    reset_password,
+    update_user_name
 )
 from src.services.email_service import send_otp_email
 from src.models.base import db
@@ -50,6 +51,11 @@ user_model = auth_ns.model('User', {
 login_response = auth_ns.model('LoginResponse', {
     'token': fields.String(description='JWT token'),
     'user': fields.Nested(user_model)
+})
+
+update_name_model = auth_ns.model('UpdateName', {
+    'user_id': fields.Integer(required=True, description='User ID'),
+    'full_name': fields.String(required=True, description='New full name')
 })
 
 @auth_ns.route('/register')
@@ -169,4 +175,18 @@ class ResetPassword(Resource):
             return {'message': message}, 400
         
         db.session.commit()
-        return {'message': message} 
+        return {'message': message}
+
+@auth_ns.route('/update-username')
+class UpdateName(Resource):
+    @auth_ns.expect(update_name_model)
+    @auth_ns.response(200, 'User name updated successfully')
+    @auth_ns.response(404, 'User not found')
+    def put(self):
+        data = auth_ns.payload
+        if not all(k in data for k in ('user_id', 'full_name')):
+            return {'message': 'Missing required fields'}, 400
+        success, message = update_user_name(data['user_id'], data['full_name'])
+        if not success:
+            return {'message': message}, 404
+        return {'message': message}, 200 
