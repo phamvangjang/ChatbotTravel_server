@@ -40,22 +40,37 @@ def send_notification_email(email, title, message, user_name):
                      sender=Config.MAIL_DEFAULT_SENDER,
                      recipients=[email])
         
+        # Convert plain text to HTML with proper formatting
+        html_message = message.replace('\n', '<br>')
+        
         # HTML template cho notification email
         msg.html = f'''
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 8px; box-shadow: 0 2px 8px #f0f0f0; padding: 32px 24px; background: #fff;">
-            <h2 style="color: #2d8cf0; text-align: center;">{title}</h2>
-            <p style="font-size: 16px; color: #333; margin: 20px 0;">Hello {user_name},</p>
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
-                <p style="font-size: 16px; color: #333; margin: 0; line-height: 1.6;">{message}</p>
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 40px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <div style="background: white; border-radius: 8px; padding: 30px; color: #333;">
+                <h1 style="color: #667eea; text-align: center; margin-bottom: 30px; font-size: 28px; font-weight: 600;">{title}</h1>
+                
+                <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+                    {html_message}
+                </div>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <div style="display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 15px 30px; border-radius: 25px; font-weight: 600; font-size: 16px;">
+                        🌟 Have a wonderful trip! 🌟
+                    </div>
+                </div>
+                
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #e0e0e0;">
+                
+                <div style="text-align: center; color: #666; font-size: 14px;">
+                    <p style="margin: 5px 0;">This is an automated reminder from</p>
+                    <p style="margin: 5px 0; font-weight: 600; color: #667eea;">Travel Assistant Chatbot</p>
+                    <p style="margin: 5px 0; font-size: 12px;">Your AI-powered travel companion</p>
+                </div>
             </div>
-            <p style="font-size: 15px; color: #555; margin: 20px 0;">Thank you for using Travel Assistant Chatbot!</p>
-            <hr style="margin: 32px 0; border: none; border-top: 1px solid #eee;">
-            <p style="font-size: 13px; color: #999; text-align: center;">This is an automated notification from Travel Assistant Chatbot</p>
-            <p style="font-size: 13px; color: #bbb; text-align: center; margin-top: 16px;">&copy; Travel Assistant Chatbot - Your Travel Companion</p>
         </div>
         '''
         
-        msg.body = f"Hello {user_name},\n\n{message}\n\nThank you for using Travel Assistant Chatbot!\n\nThis is an automated notification from Travel Assistant Chatbot"
+        msg.body = message
         
         mail.send(msg)
         return True

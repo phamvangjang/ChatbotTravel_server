@@ -5,6 +5,7 @@ from src.services.notification_service import (
     mark_notification_as_read,
     delete_notification
 )
+from src.services.scheduler_service import get_scheduler_status
 
 # Create namespace for notification API
 notification_ns = Namespace('notification', description='Notification management operations')
@@ -24,6 +25,16 @@ notification_model = notification_ns.model('Notification', {
     'is_deleted': fields.Boolean(description='Deleted status')
 })
 
+# Define scheduler status model
+scheduler_status_model = notification_ns.model('SchedulerStatus', {
+    'running': fields.Boolean(description='Whether scheduler is running'),
+    'processed_count': fields.Integer(description='Total reminder emails sent'),
+    'error_count': fields.Integer(description='Total errors encountered'),
+    'check_interval': fields.Integer(description='Check interval in seconds'),
+    'last_check_time': fields.String(description='Last check time in ISO format'),
+    'next_check_time': fields.String(description='Next check time in ISO format')
+})
+
 # Define response models
 notification_response_model = notification_ns.model('NotificationResponse', {
     'status': fields.String(description='Status of the response'),
@@ -35,6 +46,12 @@ notification_list_response_model = notification_ns.model('NotificationListRespon
     'status': fields.String(description='Status of the response'),
     'message': fields.String(description='Response message'),
     'data': fields.List(fields.Nested(notification_model), description='List of notifications')
+})
+
+scheduler_status_response_model = notification_ns.model('SchedulerStatusResponse', {
+    'status': fields.String(description='Status of the response'),
+    'message': fields.String(description='Response message'),
+    'data': fields.Nested(scheduler_status_model, description='Scheduler status data')
 })
 
 @notification_ns.route('/list')
@@ -137,4 +154,22 @@ class DeleteNotificationResource(Resource):
             }
             
         except Exception as e:
-            return {'message': f'Error processing request: {str(e)}'}, 500 
+            return {'message': f'Error processing request: {str(e)}'}, 500
+
+@notification_ns.route('/scheduler/status')
+class SchedulerStatusResource(Resource):
+    @notification_ns.response(200, 'Successfully retrieved scheduler status', scheduler_status_response_model)
+    @notification_ns.response(500, 'Internal server error')
+    def get(self):
+        """Get itinerary reminder scheduler status"""
+        try:
+            status = get_scheduler_status()
+            
+            return {
+                'status': 'success',
+                'message': 'Successfully retrieved itinerary reminder scheduler status',
+                'data': status
+            }
+            
+        except Exception as e:
+            return {'message': f'Error retrieving scheduler status: {str(e)}'}, 500 
