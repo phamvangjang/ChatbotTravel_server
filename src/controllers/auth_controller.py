@@ -6,7 +6,8 @@ from src.services.auth_service import (
     forgot_password,
     reset_password,
     update_user_name,
-    resend_register_otp
+    resend_register_otp,
+    resend_forgot_password_otp
 )
 from src.services.email_service import send_otp_email
 from src.models.base import db
@@ -202,6 +203,20 @@ class ResendRegisterOTP(Resource):
         if 'email' not in data:
             return {'message': 'Email is required'}, 400
         success, message = resend_register_otp(data['email'])
+        if not success:
+            return {'message': message}, 404
+        return {'message': message}, 200
+
+@auth_ns.route('/resend-forgot-password-otp')
+class ResendForgotPasswordOTP(Resource):
+    @auth_ns.expect(forgot_password_model)
+    @auth_ns.response(200, 'OTP resent successfully')
+    @auth_ns.response(404, 'User not found')
+    def post(self):
+        data = auth_ns.payload
+        if 'email' not in data:
+            return {'message': 'Email is required'}, 400
+        success, message = resend_forgot_password_otp(data['email'])
         if not success:
             return {'message': message}, 404
         return {'message': message}, 200 

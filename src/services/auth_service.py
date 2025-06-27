@@ -169,4 +169,28 @@ def resend_register_otp(email):
     db.session.add(otp)
     db.session.commit()
     send_otp_email(email, otp_code, 'register')
+    return True, 'OTP resent successfully'
+
+def resend_forgot_password_otp(email):
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return False, 'User not found'
+    
+    # Xóa các OTP cũ chưa dùng cho email này
+    OTP.query.filter_by(email=email, purpose='reset_password', is_used=False).delete()
+    db.session.commit()
+    
+    otp_code = generate_otp()
+    expires_at = datetime.utcnow() + timedelta(seconds=60)
+    
+    otp = OTP(
+        email=email,
+        otp_code=otp_code,
+        purpose='reset_password',
+        expires_at=expires_at
+    )
+    db.session.add(otp)
+    db.session.commit()
+    
+    send_otp_email(email, otp_code, 'reset_password')
     return True, 'OTP resent successfully' 
