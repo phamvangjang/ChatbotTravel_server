@@ -13,6 +13,7 @@ from src.models.conversation import Conversation
 from src.models.otp import OTP
 from src.models.itinerary import Itinerary
 from src.models.itinerary_item import ItineraryItem
+from src.models.notification import Notification
 
 mail = Mail()
 
@@ -45,6 +46,7 @@ def create_app():
     from src.controllers.scape_controller import scape_ns
     from src.controllers.map_controller import map_ns
     from src.controllers.Itinerary_controller import itinerary_ns
+    from src.controllers.notification_controller import notification_ns
     
     api.add_namespace(auth_ns, path='/api/auth')
     api.add_namespace(chatting_ns, path='/api/chatting')
@@ -52,6 +54,7 @@ def create_app():
     api.add_namespace(scape_ns, path='/api/scape')
     api.add_namespace(map_ns, path='/api/map')
     api.add_namespace(itinerary_ns, path='/api/itinerary')
+    api.add_namespace(notification_ns, path='/api/notification')
     
     # Create database tables
     with app.app_context():

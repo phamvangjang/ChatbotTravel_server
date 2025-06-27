@@ -5,6 +5,7 @@ from src.models.user import User
 from src.models.base import db
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional
+from src.services.notification_service import create_itinerary_reminder_notification
 
 def create_itinerary_with_items(user_id: int, selected_date: str, 
                                itinerary_items: List[Dict[str, Any]], 
@@ -86,6 +87,16 @@ def create_itinerary_with_items(user_id: int, selected_date: str,
             db.session.add(itinerary_item)
         
         db.session.commit()
+        
+        # Create reminder notification (1 day before the itinerary)
+        try:
+            reminder_success, reminder_message = create_itinerary_reminder_notification(itinerary.id)
+            if reminder_success:
+                print(f"✅ Scheduled reminder notification for itinerary {itinerary.id}")
+            else:
+                print(f"⚠️ Warning: Could not schedule reminder for itinerary {itinerary.id}: {reminder_message}")
+        except Exception as e:
+            print(f"⚠️ Warning: Error creating reminder notification: {e}")
         
         # Return the created itinerary with items
         result = itinerary.to_dict()
