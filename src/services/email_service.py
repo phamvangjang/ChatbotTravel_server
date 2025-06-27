@@ -19,5 +19,5 @@ def send_otp_email(email, otp_code, purpose):
         <p style="font-size: 13px; color: #bbb; text-align: center; margin-top: 16px;">&copy; {subject} - ScapeData</p>
     </div>
     '''
-    msg.body = f"Your verification code is: {otp_code}\n\nThis code will expire in 5 minutes.\n\nIf you did not request this code, please ignore this email."
+    msg.body = f"Your verification code is: {otp_code}\n\nThis code will expire in 1 minutes.\n\nIf you did not request this code, please ignore this email."
     mail.send(msg) 

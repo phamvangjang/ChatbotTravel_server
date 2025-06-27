@@ -18,7 +18,7 @@ def register_user(email, password, full_name, language_preference='en'):
     
     # Generate OTP
     otp_code = generate_otp()
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    expires_at = datetime.utcnow() + timedelta(seconds=60)
     
     # Save OTP
     otp = OTP(
@@ -149,4 +149,24 @@ def update_user_name(user_id, new_full_name):
         return False, 'User not found'
     user.full_name = new_full_name
     db.session.commit()
-    return True, 'User name updated successfully' 
+    return True, 'User name updated successfully'
+
+def resend_register_otp(email):
+    user = User.query.filter_by(email=email).first()
+    if not user or user.is_verified:
+        return False, 'User not found or already verified'
+    # Xóa các OTP cũ chưa dùng cho email này
+    OTP.query.filter_by(email=email, purpose='register', is_used=False).delete()
+    db.session.commit()
+    otp_code = generate_otp()
+    expires_at = datetime.utcnow() + timedelta(seconds=60)
+    otp = OTP(
+        email=email,
+        otp_code=otp_code,
+        purpose='register',
+        expires_at=expires_at
+    )
+    db.session.add(otp)
+    db.session.commit()
+    send_otp_email(email, otp_code, 'register')
+    return True, 'OTP resent successfully' 

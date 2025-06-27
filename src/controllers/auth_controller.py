@@ -5,7 +5,8 @@ from src.services.auth_service import (
     login_user,
     forgot_password,
     reset_password,
-    update_user_name
+    update_user_name,
+    resend_register_otp
 )
 from src.services.email_service import send_otp_email
 from src.models.base import db
@@ -187,6 +188,20 @@ class UpdateName(Resource):
         if not all(k in data for k in ('user_id', 'full_name')):
             return {'message': 'Missing required fields'}, 400
         success, message = update_user_name(data['user_id'], data['full_name'])
+        if not success:
+            return {'message': message}, 404
+        return {'message': message}, 200
+
+@auth_ns.route('/resend-register-otp')
+class ResendRegisterOTP(Resource):
+    @auth_ns.expect(forgot_password_model)
+    @auth_ns.response(200, 'OTP resent successfully')
+    @auth_ns.response(404, 'User not found or already verified')
+    def post(self):
+        data = auth_ns.payload
+        if 'email' not in data:
+            return {'message': 'Email is required'}, 400
+        success, message = resend_register_otp(data['email'])
         if not success:
             return {'message': message}, 404
         return {'message': message}, 200 
